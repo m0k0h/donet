@@ -1,7 +1,15 @@
 export type Priority = 1 | 2 | 3 | 4;
 
+export type Space = "personal" | "work";
+
+export const SPACES: { id: Space; label: string; icon: string }[] = [
+  { id: "personal", label: "Personal", icon: "🏠" },
+  { id: "work", label: "Laboral", icon: "💼" },
+];
+
 export type Task = {
   id: string;
+  space: Space;
   title: string;
   done: boolean;
   priority: Priority;
@@ -19,8 +27,9 @@ export const VIEWS: { id: View; label: string; icon: string }[] = [
 
 export const todayISO = () => new Date().toLocaleDateString("sv-SE");
 
-export function filterTasks(tasks: Task[], view: View): Task[] {
+export function filterTasks(all: Task[], space: Space, view: View): Task[] {
   const today = todayISO();
+  const tasks = all.filter((t) => t.space === space);
   const list =
     view === "today"
       ? tasks.filter((t) => t.due && t.due <= today)
@@ -40,7 +49,9 @@ const KEY = "donet.tasks.v1";
 
 export function loadTasks(): Task[] {
   try {
-    return JSON.parse(localStorage.getItem(KEY) ?? "[]");
+    const raw: Task[] = JSON.parse(localStorage.getItem(KEY) ?? "[]");
+    // Las tareas creadas antes de existir los espacios pasan a Personal.
+    return raw.map((t) => ({ ...t, space: t.space ?? "personal" }));
   } catch {
     return [];
   }
@@ -49,5 +60,21 @@ export function loadTasks(): Task[] {
 export function saveTasks(tasks: Task[]) {
   try {
     localStorage.setItem(KEY, JSON.stringify(tasks));
+  } catch {}
+}
+
+const SPACE_KEY = "donet.space.v1";
+
+export function loadSpace(): Space {
+  try {
+    return localStorage.getItem(SPACE_KEY) === "work" ? "work" : "personal";
+  } catch {
+    return "personal";
+  }
+}
+
+export function saveSpace(space: Space) {
+  try {
+    localStorage.setItem(SPACE_KEY, space);
   } catch {}
 }

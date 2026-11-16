@@ -2,12 +2,16 @@
 
 import { useEffect, useState } from "react";
 import {
+  SPACES,
   VIEWS,
   filterTasks,
+  loadSpace,
   loadTasks,
+  saveSpace,
   saveTasks,
   todayISO,
   type Priority,
+  type Space,
   type Task,
   type View,
 } from "@/lib/tasks";
@@ -19,9 +23,46 @@ const PRIORITY_RING: Record<Priority, string> = {
   4: "border-neutral-400",
 };
 
+// Cada espacio tiene su color para saber de un vistazo dónde estás.
+const THEME: Record<Space, { active: string; button: string; nav: string; pill: string }> = {
+  personal: {
+    active: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100",
+    button: "bg-amber-500",
+    nav: "text-amber-600",
+    pill: "bg-amber-500 text-white",
+  },
+  work: {
+    active: "bg-blue-100 text-blue-900 dark:bg-blue-900/40 dark:text-blue-100",
+    button: "bg-blue-600",
+    nav: "text-blue-600 dark:text-blue-400",
+    pill: "bg-blue-600 text-white",
+  },
+};
+
+function SpaceSwitch({ space, onChange }: { space: Space; onChange: (s: Space) => void }) {
+  return (
+    <div role="tablist" aria-label="Espacio" className="flex rounded-lg bg-black/5 dark:bg-white/10 p-1">
+      {SPACES.map((s) => (
+        <button
+          key={s.id}
+          role="tab"
+          aria-selected={space === s.id}
+          onClick={() => onChange(s.id)}
+          className={`flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium ${
+            space === s.id ? THEME[s.id].pill : "opacity-70 hover:opacity-100"
+          }`}
+        >
+          <span aria-hidden>{s.icon}</span> {s.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function TaskApp() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [space, setSpace] = useState<Space>("personal");
   const [view, setView] = useState<View>("inbox");
   const [title, setTitle] = useState("");
   const [due, setDue] = useState("");
@@ -29,14 +70,20 @@ export default function TaskApp() {
 
   useEffect(() => {
     setTasks(loadTasks());
+    setSpace(loadSpace());
     setLoaded(true);
   }, []);
   useEffect(() => {
     if (loaded) saveTasks(tasks);
   }, [tasks, loaded]);
 
-  const visible = filterTasks(tasks, view);
-  const pending = (v: View) => filterTasks(tasks, v).filter((t) => !t.done).length;
+  const theme = THEME[space];
+  const changeSpace = (s: Space) => {
+    setSpace(s);
+    saveSpace(s);
+  };
+  const visible = filterTasks(tasks, space, view);
+  const pending = (v: View) => filterTasks(tasks, space, v).filter((t) => !t.done).length;
   const current = VIEWS.find((v) => v.id === view)!;
 
   function addTask(e: React.FormEvent) {
@@ -47,6 +94,7 @@ export default function TaskApp() {
       ...prev,
       {
         id: crypto.randomUUID(),
+        space,
         title: t,
         done: false,
         priority,
@@ -70,13 +118,16 @@ export default function TaskApp() {
         <h1 className="mb-4 px-2 text-xl font-bold">
           doneT <span aria-hidden>🍩</span>
         </h1>
+        <div className="mb-4">
+          <SpaceSwitch space={space} onChange={changeSpace} />
+        </div>
         {VIEWS.map((v) => (
           <button
             key={v.id}
             onClick={() => setView(v.id)}
             className={`flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm ${
               view === v.id
-                ? "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100"
+                ? theme.active
                 : "hover:bg-black/5 dark:hover:bg-white/5"
             }`}
           >
@@ -89,9 +140,14 @@ export default function TaskApp() {
 
       <main className="flex-1 min-w-0 px-4 pt-6 pb-28 md:px-10 md:pb-10">
         <div className="mx-auto max-w-2xl">
-          <header className="mb-6 flex items-baseline justify-between">
+          <div className="md:hidden mb-5 flex items-center gap-3">
+            <span className="text-lg font-bold">doneT 🍩</span>
+            <div className="ml-auto">
+              <SpaceSwitch space={space} onChange={changeSpace} />
+            </div>
+          </div>
+          <header className="mb-6">
             <h2 className="text-2xl font-bold">{current.label}</h2>
-            <span className="md:hidden text-lg font-bold">doneT 🍩</span>
           </header>
 
           <form onSubmit={addTask} className="mb-6 rounded-xl border border-black/10 dark:border-white/15 p-3">
@@ -124,7 +180,7 @@ export default function TaskApp() {
               <button
                 type="submit"
                 disabled={!title.trim()}
-                className="ml-auto rounded-md bg-amber-500 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                className={`ml-auto rounded-md ${theme.button} px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40`}
               >
                 Añadir
               </button>
@@ -179,7 +235,7 @@ export default function TaskApp() {
             key={v.id}
             onClick={() => setView(v.id)}
             className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-xs ${
-              view === v.id ? "text-amber-600 font-semibold" : "opacity-70"
+              view === v.id ? `${theme.nav} font-semibold` : "opacity-70"
             }`}
           >
             <span className="text-xl" aria-hidden>{v.icon}</span>

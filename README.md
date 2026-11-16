@@ -1,4 +1,4 @@
-# doneT 🍩
+# doneT
 
 Mi gestor de tareas personal, inspirado en Todoist y adaptado a mí. Sí, el nombre viene del donete.
 

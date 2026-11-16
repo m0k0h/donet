@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "doneT",
-  description: "Mi gestor de tareas personal 🍩",
+  description: "Mi gestor de tareas personal",
 };
 
 export const viewport: Viewport = {

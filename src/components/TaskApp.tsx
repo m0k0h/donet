@@ -116,7 +116,7 @@ export default function TaskApp() {
       {/* Barra lateral: solo escritorio */}
       <aside className="hidden md:flex w-64 shrink-0 flex-col gap-1 border-r border-black/10 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900 p-4">
         <h1 className="mb-4 px-2 text-xl font-bold">
-          doneT <span aria-hidden>🍩</span>
+          doneT
         </h1>
         <div className="mb-4">
           <SpaceSwitch space={space} onChange={changeSpace} />
@@ -141,7 +141,7 @@ export default function TaskApp() {
       <main className="flex-1 min-w-0 px-4 pt-6 pb-28 md:px-10 md:pb-10">
         <div className="mx-auto max-w-2xl">
           <div className="md:hidden mb-5 flex items-center gap-3">
-            <span className="text-lg font-bold">doneT 🍩</span>
+            <span className="text-lg font-bold">doneT</span>
             <div className="ml-auto">
               <SpaceSwitch space={space} onChange={changeSpace} />
             </div>
@@ -188,7 +188,7 @@ export default function TaskApp() {
           </form>
 
           {loaded && visible.length === 0 && (
-            <p className="py-16 text-center opacity-60">Nada por aquí. ¡Te has ganado un donete! 🍩</p>
+            <p className="py-16 text-center opacity-60">Nada por aquí. ¡Te has ganado un donete!</p>
           )}
 
           <ul className="divide-y divide-black/5 dark:divide-white/10">

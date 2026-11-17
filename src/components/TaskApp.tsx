@@ -15,44 +15,40 @@ import {
   type Task,
   type View,
 } from "@/lib/tasks";
+import Logo from "./Logo";
+import { CheckIcon, PlusIcon, SpaceIcon, TrashIcon, ViewIcon } from "./icons";
 
-const PRIORITY_RING: Record<Priority, string> = {
-  1: "border-red-500",
-  2: "border-orange-400",
-  3: "border-blue-500",
-  4: "border-neutral-400",
+const PRIORITY_CIRCLE: Record<Priority, string> = {
+  1: "border-[#c4121f] bg-[#c4121f]/15",
+  2: "border-[#d97706] bg-[#d97706]/15",
+  3: "border-[#2563eb] bg-[#2563eb]/15",
+  4: "border-ring",
 };
 
-// Cada espacio tiene su color para saber de un vistazo dónde estás.
-const THEME: Record<Space, { active: string; button: string; nav: string; pill: string }> = {
-  personal: {
-    active: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100",
-    button: "bg-amber-500",
-    nav: "text-amber-600",
-    pill: "bg-amber-500 text-white",
-  },
-  work: {
-    active: "bg-blue-100 text-blue-900 dark:bg-blue-900/40 dark:text-blue-100",
-    button: "bg-blue-600",
-    nav: "text-blue-600 dark:text-blue-400",
-    pill: "bg-blue-600 text-white",
-  },
-};
+function dueLabel(due: string | undefined, today: string) {
+  if (!due) return "Sin fecha";
+  const days = Math.round((Date.parse(due) - Date.parse(today)) / 86400000);
+  if (days === 0) return "Hoy";
+  if (days === -1) return "Ayer";
+  if (days === 1) return "Mañana";
+  return new Date(due + "T00:00").toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" });
+}
 
-function SpaceSwitch({ space, onChange }: { space: Space; onChange: (s: Space) => void }) {
+function SpaceSwitch({ space, onChange, compact }: { space: Space; onChange: (s: Space) => void; compact?: boolean }) {
   return (
-    <div role="tablist" aria-label="Espacio" className="flex rounded-lg bg-black/5 dark:bg-white/10 p-1">
+    <div role="tablist" aria-label="Espacio" className="flex gap-1 rounded-full bg-track p-1">
       {SPACES.map((s) => (
         <button
           key={s.id}
           role="tab"
           aria-selected={space === s.id}
           onClick={() => onChange(s.id)}
-          className={`flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium ${
-            space === s.id ? THEME[s.id].pill : "opacity-70 hover:opacity-100"
-          }`}
+          className={`flex min-h-11 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm ${
+            compact ? "px-3.5" : "px-3"
+          } ${space === s.id ? "bg-accent font-bold text-white" : "font-semibold text-ink-soft"}`}
         >
-          <span aria-hidden>{s.icon}</span> {s.label}
+          <SpaceIcon space={s.id} size={compact ? 16 : 18} />
+          {s.label}
         </button>
       ))}
     </div>
@@ -67,6 +63,7 @@ export default function TaskApp() {
   const [title, setTitle] = useState("");
   const [due, setDue] = useState("");
   const [priority, setPriority] = useState<Priority>(4);
+  const [composerOpen, setComposerOpen] = useState(false);
 
   useEffect(() => {
     setTasks(loadTasks());
@@ -77,14 +74,16 @@ export default function TaskApp() {
     if (loaded) saveTasks(tasks);
   }, [tasks, loaded]);
 
-  const theme = THEME[space];
   const changeSpace = (s: Space) => {
     setSpace(s);
     saveSpace(s);
   };
+  const today = todayISO();
   const visible = filterTasks(tasks, space, view);
   const pending = (v: View) => filterTasks(tasks, space, v).filter((t) => !t.done).length;
   const current = VIEWS.find((v) => v.id === view)!;
+  const spaceLabel = SPACES.find((s) => s.id === space)!.label;
+  const count = pending(view);
 
   function addTask(e: React.FormEvent) {
     e.preventDefault();
@@ -98,7 +97,7 @@ export default function TaskApp() {
         title: t,
         done: false,
         priority,
-        due: due || (view === "today" ? todayISO() : undefined),
+        due: due || (view === "today" ? today : undefined),
         createdAt: Date.now(),
       },
     ]);
@@ -112,133 +111,164 @@ export default function TaskApp() {
   const remove = (id: string) => setTasks((prev) => prev.filter((t) => t.id !== id));
 
   return (
-    <div className="flex min-h-dvh">
+    <div data-space={space} className="flex min-h-dvh">
       {/* Barra lateral: solo escritorio */}
-      <aside className="hidden md:flex w-64 shrink-0 flex-col gap-1 border-r border-black/10 dark:border-white/10 bg-neutral-50 dark:bg-neutral-900 p-4">
-        <h1 className="mb-4 px-2 text-xl font-bold">
-          doneT
-        </h1>
-        <div className="mb-4">
-          <SpaceSwitch space={space} onChange={changeSpace} />
+      <aside className="hidden w-64 shrink-0 flex-col gap-6 bg-sunk px-4 py-6 md:flex">
+        <div className="px-2">
+          <Logo size={28} surface="var(--sunk)" />
         </div>
-        {VIEWS.map((v) => (
-          <button
-            key={v.id}
-            onClick={() => setView(v.id)}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm ${
-              view === v.id
-                ? theme.active
-                : "hover:bg-black/5 dark:hover:bg-white/5"
-            }`}
-          >
-            <span aria-hidden>{v.icon}</span>
-            <span className="flex-1">{v.label}</span>
-            <span className="text-xs opacity-60">{pending(v.id) || ""}</span>
-          </button>
-        ))}
+        <SpaceSwitch space={space} onChange={changeSpace} />
+        <nav aria-label="Vistas" className="flex flex-col gap-1">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              onClick={() => setView(v.id)}
+              aria-current={view === v.id ? "page" : undefined}
+              className={`flex min-h-11 items-center gap-3 rounded-xl px-3.5 text-left text-[15px] ${
+                view === v.id ? "bg-accent-soft font-bold text-accent-ink" : "font-medium hover:bg-track"
+              }`}
+            >
+              <ViewIcon view={v.id} />
+              <span className="flex-1">{v.label}</span>
+              <span className={`text-[13px] ${view === v.id ? "" : "text-muted"}`}>{pending(v.id) || ""}</span>
+            </button>
+          ))}
+        </nav>
       </aside>
 
-      <main className="flex-1 min-w-0 px-4 pt-6 pb-28 md:px-10 md:pb-10">
-        <div className="mx-auto max-w-2xl">
-          <div className="md:hidden mb-5 flex items-center gap-3">
-            <span className="text-lg font-bold">doneT</span>
+      <main className="min-w-0 flex-1 px-4 pb-32 pt-4 md:px-6 md:pb-16 md:pt-10">
+        <div className="mx-auto flex max-w-[720px] flex-col gap-6">
+          <div className="flex items-center gap-3 md:hidden">
+            <Logo size={24} />
             <div className="ml-auto">
-              <SpaceSwitch space={space} onChange={changeSpace} />
+              <SpaceSwitch space={space} onChange={changeSpace} compact />
             </div>
           </div>
-          <header className="mb-6">
-            <h2 className="text-2xl font-bold">{current.label}</h2>
+
+          <header className="flex flex-col gap-1">
+            <h1 className="text-[30px] font-extrabold leading-tight tracking-[-0.02em] md:text-[34px]">
+              {current.label}
+            </h1>
+            <p className="text-sm text-muted">
+              {spaceLabel} · {count === 1 ? "1 tarea pendiente" : `${count} tareas pendientes`}
+            </p>
           </header>
 
-          <form onSubmit={addTask} className="mb-6 rounded-xl border border-black/10 dark:border-white/15 p-3">
+          <form
+            onSubmit={addTask}
+            className={`${composerOpen ? "flex" : "hidden"} flex-col gap-3 rounded-2xl bg-sunk p-4 md:flex`}
+          >
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Añadir tarea…"
               aria-label="Nombre de la tarea"
-              className="w-full bg-transparent text-base outline-none placeholder:opacity-50"
+              autoFocus={composerOpen}
+              className="w-full bg-transparent py-1 text-base outline-none placeholder:text-muted"
             />
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <input
                 type="date"
                 value={due}
                 onChange={(e) => setDue(e.target.value)}
                 aria-label="Fecha"
-                className="rounded-md border border-black/10 dark:border-white/15 bg-transparent px-2 py-1 text-sm"
+                className="min-h-11 rounded-full bg-bg px-3.5 text-sm font-medium text-ink-soft"
               />
               <select
                 value={priority}
                 onChange={(e) => setPriority(Number(e.target.value) as Priority)}
                 aria-label="Prioridad"
-                className="rounded-md border border-black/10 dark:border-white/15 bg-transparent px-2 py-1 text-sm"
+                className="min-h-11 rounded-full bg-bg px-3.5 text-sm font-medium text-ink-soft"
               >
-                <option value={1}>P1</option>
-                <option value={2}>P2</option>
-                <option value={3}>P3</option>
-                <option value={4}>P4</option>
+                <option value={1}>Prioridad 1</option>
+                <option value={2}>Prioridad 2</option>
+                <option value={3}>Prioridad 3</option>
+                <option value={4}>Sin prioridad</option>
               </select>
               <button
                 type="submit"
                 disabled={!title.trim()}
-                className={`ml-auto rounded-md ${theme.button} px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40`}
+                className="ml-auto min-h-11 rounded-full bg-accent px-5 text-sm font-bold text-white disabled:opacity-40"
               >
-                Añadir
+                Añadir tarea
               </button>
             </div>
           </form>
 
           {loaded && visible.length === 0 && (
-            <p className="py-16 text-center opacity-60">Nada por aquí. ¡Te has ganado un donete!</p>
+            <p className="py-16 text-center text-muted">Nada por aquí. ¡Te has ganado un donete!</p>
           )}
 
-          <ul className="divide-y divide-black/5 dark:divide-white/10">
-            {visible.map((t) => (
-              <li key={t.id} className="group flex items-start gap-3 py-3">
-                <button
-                  onClick={() => toggle(t.id)}
-                  aria-label={t.done ? "Marcar como pendiente" : "Completar tarea"}
-                  className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 text-xs ${PRIORITY_RING[t.priority]} ${
-                    t.done ? "bg-neutral-400 border-neutral-400 text-white" : ""
-                  }`}
-                >
-                  {t.done ? "✓" : ""}
-                </button>
-                <div className="min-w-0 flex-1">
-                  <p className={`break-words ${t.done ? "line-through opacity-50" : ""}`}>{t.title}</p>
-                  {t.due && (
-                    <p className={`text-xs ${!t.done && t.due < todayISO() ? "text-red-500" : "opacity-60"}`}>
-                      {new Date(t.due + "T00:00").toLocaleDateString("es-ES", {
-                        weekday: "short",
-                        day: "numeric",
-                        month: "short",
-                      })}
-                    </p>
-                  )}
-                </div>
-                <button
-                  onClick={() => remove(t.id)}
-                  aria-label="Eliminar tarea"
-                  className="p-1 opacity-50 hover:opacity-100 md:opacity-0 md:group-hover:opacity-60"
-                >
-                  🗑️
-                </button>
-              </li>
-            ))}
+          <ul className="flex flex-col">
+            {visible.map((t) => {
+              const overdue = !t.done && !!t.due && t.due < today;
+              return (
+                <li key={t.id} className="group flex items-start gap-1 border-b border-line py-1.5 last:border-b-0">
+                  <button
+                    onClick={() => toggle(t.id)}
+                    aria-label={`${t.done ? "Marcar como pendiente" : "Completar"}: ${t.title}`}
+                    className="grid h-11 w-11 shrink-0 place-items-center"
+                  >
+                    {t.done ? (
+                      <span className="grid h-6 w-6 place-items-center rounded-full bg-green text-on-green">
+                        <CheckIcon size={14} />
+                      </span>
+                    ) : (
+                      <span className={`h-5 w-5 rounded-full border-2 ${PRIORITY_CIRCLE[t.priority]}`} />
+                    )}
+                  </button>
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-2.5">
+                    <span className={`break-words ${t.done ? "text-muted line-through" : ""}`}>{t.title}</span>
+                    {t.done ? (
+                      <span className="text-[13px] font-semibold text-green">Hecha</span>
+                    ) : (
+                      <span className={`text-[13px] ${overdue ? "font-semibold text-danger" : "text-muted"}`}>
+                        {dueLabel(t.due, today)}
+                        {t.priority < 4 && ` · P${t.priority}`}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => remove(t.id)}
+                    aria-label={`Eliminar: ${t.title}`}
+                    className="grid h-11 w-11 shrink-0 place-items-center text-muted hover:text-danger md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
+                  >
+                    <TrashIcon size={18} />
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </main>
 
+      {/* Botón flotante para añadir: solo móvil */}
+      <button
+        onClick={() => setComposerOpen((o) => !o)}
+        aria-label={composerOpen ? "Cerrar añadir tarea" : "Añadir tarea"}
+        aria-expanded={composerOpen}
+        className="fixed bottom-24 right-4 grid h-14 w-14 place-items-center rounded-full bg-accent text-white shadow-lg md:hidden"
+      >
+        <span className={`transition-transform ${composerOpen ? "rotate-45" : ""}`}>
+          <PlusIcon size={26} />
+        </span>
+      </button>
+
       {/* Navegación inferior: solo móvil */}
-      <nav className="md:hidden fixed inset-x-0 bottom-0 flex border-t border-black/10 dark:border-white/10 bg-white/95 dark:bg-neutral-950/95 backdrop-blur pb-[env(safe-area-inset-bottom)]">
+      <nav
+        aria-label="Vistas"
+        className="fixed inset-x-0 bottom-0 flex gap-1 bg-sunk px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden"
+      >
         {VIEWS.map((v) => (
           <button
             key={v.id}
             onClick={() => setView(v.id)}
-            className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-xs ${
-              view === v.id ? `${theme.nav} font-semibold` : "opacity-70"
+            aria-current={view === v.id ? "page" : undefined}
+            className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-xs ${
+              view === v.id ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
             }`}
           >
-            <span className="text-xl" aria-hidden>{v.icon}</span>
+            <ViewIcon view={v.id} size={22} />
             {v.label}
           </button>
         ))}

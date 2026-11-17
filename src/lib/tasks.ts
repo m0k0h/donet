@@ -2,9 +2,9 @@ export type Priority = 1 | 2 | 3 | 4;
 
 export type Space = "personal" | "work";
 
-export const SPACES: { id: Space; label: string; icon: string }[] = [
-  { id: "personal", label: "Personal", icon: "🏠" },
-  { id: "work", label: "Laboral", icon: "💼" },
+export const SPACES: { id: Space; label: string }[] = [
+  { id: "personal", label: "Personal" },
+  { id: "work", label: "Laboral" },
 ];
 
 export type Task = {
@@ -19,10 +19,10 @@ export type Task = {
 
 export type View = "inbox" | "today" | "upcoming";
 
-export const VIEWS: { id: View; label: string; icon: string }[] = [
-  { id: "inbox", label: "Entrada", icon: "📥" },
-  { id: "today", label: "Hoy", icon: "📅" },
-  { id: "upcoming", label: "Próximo", icon: "🗓️" },
+export const VIEWS: { id: View; label: string }[] = [
+  { id: "inbox", label: "Entrada" },
+  { id: "today", label: "Hoy" },
+  { id: "upcoming", label: "Próximo" },
 ];
 
 export const todayISO = () => new Date().toLocaleDateString("sv-SE");

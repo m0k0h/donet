@@ -1,26 +1,83 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --sunk: #f4f5f7;
+  --track: #e3e5ea;
+  --line: #e3e5ea;
+  --ink: #16181d;
+  --ink-soft: #3f4550;
+  --muted: #5c6370;
+  --ring: #9aa1ad;
+  --green: #0a7f55;
+  --on-green: #ffffff;
+  --danger: #c4121f;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Cada espacio tiene su color: magenta en Personal, azul marino en Laboral. */
+[data-space="personal"] {
+  --accent: #a21caf;
+  --accent-soft: #fae8ff;
+  --accent-ink: #701a75;
+  --mark: #a21caf;
+}
+[data-space="work"] {
+  --accent: #1e40af;
+  --accent-soft: #dbeafe;
+  --accent-ink: #1e3a8a;
+  --mark: #1e40af;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #111318;
+    --sunk: #1a1d24;
+    --track: #2a2e37;
+    --line: #2a2e37;
+    --ink: #f1f2f4;
+    --ink-soft: #c5cad3;
+    --muted: #a0a7b3;
+    --ring: #6b7280;
+    --green: #34d399;
+    --on-green: #16181d;
+    --danger: #f87171;
+  }
+  [data-space="personal"] {
+    --accent: #c026d3;
+    --accent-soft: #4a044e;
+    --accent-ink: #f5d0fe;
+    --mark: #e879f9;
+  }
+  [data-space="work"] {
+    --accent: #2563eb;
+    --accent-soft: #1e3a8a;
+    --accent-ink: #dbeafe;
+    --mark: #93c5fd;
   }
 }
 
+@theme inline {
+  --color-bg: var(--bg);
+  --color-sunk: var(--sunk);
+  --color-track: var(--track);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-ring: var(--ring);
+  --color-green: var(--green);
+  --color-on-green: var(--on-green);
+  --color-danger: var(--danger);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-mark: var(--mark);
+  --font-sans: var(--font-outfit), system-ui, sans-serif;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-outfit), system-ui, sans-serif;
 }

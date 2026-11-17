@@ -8,7 +8,8 @@ Primera versión (MVP):
 - Dos espacios separados, **Personal** y **Laboral**, con cambio rápido entre ellos
 - Vistas **Entrada**, **Hoy** y **Próximo**
 - Crear, completar y borrar tareas, con fecha y prioridad (P1–P4)
-- Diseño adaptado: barra lateral en escritorio, navegación inferior en móvil
+- Diseño adaptado: barra lateral en escritorio; en móvil, navegación inferior y botón flotante para añadir
+- Identidad propia: logo, tipografía Outfit, magenta en Personal y azul marino en Laboral, modo claro y oscuro
 - Los datos se guardan en el navegador (`localStorage`)
 
 ## Próximos pasos

@@ -251,13 +251,13 @@ export default function TaskApp() {
                 value={due}
                 onChange={(e) => setDue(e.target.value)}
                 aria-label="Fecha"
-                className="min-h-11 rounded-lg bg-bg px-3.5 text-sm font-medium text-ink-soft"
+                className="min-h-9 rounded-lg bg-bg px-3.5 text-sm font-medium text-ink-soft"
               />
               <select
                 value={priority}
                 onChange={(e) => setPriority(Number(e.target.value) as Priority)}
                 aria-label="Prioridad"
-                className="min-h-11 rounded-lg bg-bg px-3.5 text-sm font-medium text-ink-soft"
+                className="min-h-9 rounded-lg bg-bg px-3.5 text-sm font-medium text-ink-soft"
               >
                 <option value={1}>Prioridad 1</option>
                 <option value={2}>Prioridad 2</option>
@@ -267,7 +267,7 @@ export default function TaskApp() {
               <button
                 type="submit"
                 disabled={!title.trim()}
-                className="ml-auto min-h-11 rounded-lg bg-accent px-5 text-sm font-bold text-white disabled:opacity-40"
+                className="ml-auto min-h-9 rounded-lg bg-accent px-5 text-sm font-bold text-white disabled:opacity-40"
               >
                 Añadir tarea
               </button>

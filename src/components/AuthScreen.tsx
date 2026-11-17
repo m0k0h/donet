@@ -33,7 +33,7 @@ export default function AuthScreen() {
     else if (mode === "up" && !data.session) setNotice("Te hemos enviado un correo para confirmar la cuenta.");
   }
 
-  const field = "min-h-11 w-full rounded-lg bg-bg px-3.5 text-base outline-none placeholder:text-muted";
+  const field = "min-h-9 w-full rounded-lg bg-bg px-3.5 text-base outline-none placeholder:text-muted";
 
   return (
     <div data-space="personal" className="grid min-h-dvh place-items-center px-4">
@@ -68,7 +68,7 @@ export default function AuthScreen() {
         <button
           type="submit"
           disabled={busy}
-          className="min-h-11 rounded-lg bg-accent px-5 text-sm font-bold text-white disabled:opacity-40"
+          className="min-h-9 rounded-lg bg-accent px-5 text-sm font-bold text-white disabled:opacity-40"
         >
           {mode === "in" ? "Entrar" : "Crear cuenta"}
         </button>

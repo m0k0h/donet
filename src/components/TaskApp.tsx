@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   SPACES,
   VIEWS,
@@ -35,6 +35,7 @@ import {
   updateTask,
 } from "@/lib/supabase";
 import AuthScreen from "./AuthScreen";
+import ConfirmDialog from "./ConfirmDialog";
 import Dialog from "./Dialog";
 import Logo from "./Logo";
 import ProjectDialog from "./ProjectDialog";
@@ -109,6 +110,8 @@ function Tasks({ space }: { space: Space }) {
   // Nuevo proyecto (con su padre, si se crea dentro de otro) o edición de uno existente.
   const [projectDialog, setProjectDialog] = useState<{ parentId?: string; project?: Project } | null>(null);
   const [projectsSheet, setProjectsSheet] = useState(false);
+  // Confirmación pendiente antes de borrar algo.
+  const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
   // undefined = comprobando sesión, null = sin sesión.
   const [userId, setUserId] = useState<string | null | undefined>(undefined);
   const [syncError, setSyncError] = useState("");
@@ -273,6 +276,27 @@ function Tasks({ space }: { space: Space }) {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: !task.done } : t)));
     sync(setTaskDone(task.id, !task.done));
   }
+  function askRemoveTask(id: string) {
+    const task = tasks.find((t) => t.id === id);
+    if (!task) return;
+    const subs = descendantIds(tasks, id).length;
+    setConfirm({
+      title: "Borrar tarea",
+      message: `¿Borrar «${task.title}»${
+        subs ? ` y ${subs === 1 ? "su subtarea" : `sus ${subs} subtareas`}` : ""
+      }? No se puede deshacer.`,
+      onConfirm: () => remove(id),
+    });
+  }
+
+  function askRemoveProject(project: Project) {
+    setConfirm({
+      title: "Borrar proyecto",
+      message: `¿Borrar «${project.name}»? Se borrarán también sus subproyectos y todas sus tareas. No se puede deshacer.`,
+      onConfirm: () => removeProject(project),
+    });
+  }
+
   // Al borrar una tarea se van también sus subtareas (la base de datos hace lo mismo).
   function remove(id: string) {
     setTasks((prev) => {
@@ -448,7 +472,7 @@ function Tasks({ space }: { space: Space }) {
                 }
                 onToggle={toggle}
                 onEdit={setEditingTask}
-                onRemove={remove}
+                onRemove={askRemoveTask}
                 onAddSubtask={addSubtask}
               />
             ))}
@@ -516,7 +540,7 @@ function Tasks({ space }: { space: Space }) {
           parentId={projectDialog.parentId}
           project={projectDialog.project}
           onSave={(p) => (projectDialog.project ? saveProject(projectDialog.project, p) : createProject(p))}
-          onDelete={projectDialog.project && (() => removeProject(projectDialog.project!))}
+          onDelete={projectDialog.project && (() => askRemoveProject(projectDialog.project!))}
           onClose={() => setProjectDialog(null)}
         />
       )}
@@ -527,6 +551,15 @@ function Tasks({ space }: { space: Space }) {
           projects={projects}
           onSave={createTask}
           onClose={() => setTaskDialog(null)}
+        />
+      )}
+
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          message={confirm.message}
+          onConfirm={confirm.onConfirm}
+          onClose={() => setConfirm(null)}
         />
       )}
 
@@ -575,6 +608,24 @@ function TaskRow({
   onAddSubtask: (parent: Task, title: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const subForm = useRef<HTMLFormElement>(null);
+  const subButton = useRef<HTMLButtonElement>(null);
+
+  // El campo de subtarea se cierra al pulsar fuera de él o con Escape.
+  useEffect(() => {
+    if (!adding) return;
+    const onPointer = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (!subForm.current?.contains(target) && !subButton.current?.contains(target)) setAdding(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setAdding(false);
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [adding]);
   const [sub, setSub] = useState("");
   const overdue = !t.done && !!t.due && t.due < today;
   const children = tree ? childrenOf(t.id) : [];
@@ -627,6 +678,7 @@ function TaskRow({
         </button>
         {tree && (
           <button
+            ref={subButton}
             onClick={() => setAdding((a) => !a)}
             aria-label={`Añadir subtarea a: ${t.title}`}
             aria-expanded={adding}
@@ -667,7 +719,7 @@ function TaskRow({
       {adding && (
         <form
           onSubmit={submitSub}
-          onKeyDown={(e) => e.key === "Escape" && setAdding(false)}
+          ref={subForm}
           className="flex items-center gap-2 border-b border-line py-1.5"
           style={{ paddingLeft: (depth + 1) * 28 + 12 }}
         >

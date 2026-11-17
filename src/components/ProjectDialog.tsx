@@ -38,14 +38,10 @@ export default function ProjectDialog({
     onClose();
   }
 
+  // La confirmación la pide quien abre este formulario.
   function remove() {
-    if (!project || !onDelete) return;
-    const ok = window.confirm(
-      `¿Borrar «${project.name}»? Se borrarán también sus subproyectos y todas sus tareas. No se puede deshacer.`,
-    );
-    if (!ok) return;
-    onDelete();
     onClose();
+    onDelete?.();
   }
 
   return (

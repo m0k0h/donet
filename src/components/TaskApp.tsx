@@ -36,14 +36,14 @@ function dueLabel(due: string | undefined, today: string) {
 
 function SpaceSwitch({ space, onChange, compact }: { space: Space; onChange: (s: Space) => void; compact?: boolean }) {
   return (
-    <div role="tablist" aria-label="Espacio" className="flex gap-1 rounded-full bg-track p-1">
+    <div role="tablist" aria-label="Espacio" className="flex gap-1 rounded-[10px] bg-track p-1">
       {SPACES.map((s) => (
         <button
           key={s.id}
           role="tab"
           aria-selected={space === s.id}
           onClick={() => onChange(s.id)}
-          className={`flex min-h-11 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm ${
+          className={`flex min-h-11 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-[7px] text-sm ${
             compact ? "px-3.5" : "px-3"
           } ${space === s.id ? "bg-accent font-bold text-white" : "font-semibold text-ink-soft"}`}
         >
@@ -124,7 +124,7 @@ export default function TaskApp() {
               key={v.id}
               onClick={() => setView(v.id)}
               aria-current={view === v.id ? "page" : undefined}
-              className={`flex min-h-11 items-center gap-3 rounded-xl px-3.5 text-left text-[15px] ${
+              className={`flex min-h-11 items-center gap-3 rounded-lg px-3.5 text-left text-[15px] ${
                 view === v.id ? "bg-accent-soft font-bold text-accent-ink" : "font-medium hover:bg-track"
               }`}
             >
@@ -156,7 +156,7 @@ export default function TaskApp() {
 
           <form
             onSubmit={addTask}
-            className={`${composerOpen ? "flex" : "hidden"} flex-col gap-3 rounded-2xl bg-sunk p-4 md:flex`}
+            className={`${composerOpen ? "flex" : "hidden"} flex-col gap-3 rounded-xl bg-sunk p-4 md:flex`}
           >
             <input
               value={title}
@@ -172,13 +172,13 @@ export default function TaskApp() {
                 value={due}
                 onChange={(e) => setDue(e.target.value)}
                 aria-label="Fecha"
-                className="min-h-11 rounded-full bg-bg px-3.5 text-sm font-medium text-ink-soft"
+                className="min-h-11 rounded-lg bg-bg px-3.5 text-sm font-medium text-ink-soft"
               />
               <select
                 value={priority}
                 onChange={(e) => setPriority(Number(e.target.value) as Priority)}
                 aria-label="Prioridad"
-                className="min-h-11 rounded-full bg-bg px-3.5 text-sm font-medium text-ink-soft"
+                className="min-h-11 rounded-lg bg-bg px-3.5 text-sm font-medium text-ink-soft"
               >
                 <option value={1}>Prioridad 1</option>
                 <option value={2}>Prioridad 2</option>
@@ -188,7 +188,7 @@ export default function TaskApp() {
               <button
                 type="submit"
                 disabled={!title.trim()}
-                className="ml-auto min-h-11 rounded-full bg-accent px-5 text-sm font-bold text-white disabled:opacity-40"
+                className="ml-auto min-h-11 rounded-lg bg-accent px-5 text-sm font-bold text-white disabled:opacity-40"
               >
                 Añadir tarea
               </button>
@@ -247,7 +247,7 @@ export default function TaskApp() {
         onClick={() => setComposerOpen((o) => !o)}
         aria-label={composerOpen ? "Cerrar añadir tarea" : "Añadir tarea"}
         aria-expanded={composerOpen}
-        className="fixed bottom-24 right-4 grid h-14 w-14 place-items-center rounded-full bg-accent text-white shadow-lg md:hidden"
+        className="fixed bottom-24 right-4 grid h-14 w-14 place-items-center rounded-2xl bg-accent text-white shadow-lg md:hidden"
       >
         <span className={`transition-transform ${composerOpen ? "rotate-45" : ""}`}>
           <PlusIcon size={26} />
@@ -264,7 +264,7 @@ export default function TaskApp() {
             key={v.id}
             onClick={() => setView(v.id)}
             aria-current={view === v.id ? "page" : undefined}
-            className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-xs ${
+            className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
               view === v.id ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
             }`}
           >

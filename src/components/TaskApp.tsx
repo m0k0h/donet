@@ -16,6 +16,7 @@ import {
   type View,
 } from "@/lib/tasks";
 import Logo from "./Logo";
+import ThemeToggle from "./ThemeToggle";
 import { CheckIcon, PlusIcon, SpaceIcon, TrashIcon, ViewIcon } from "./icons";
 
 const PRIORITY_CIRCLE: Record<Priority, string> = {
@@ -114,8 +115,9 @@ export default function TaskApp() {
     <div data-space={space} className="flex min-h-dvh">
       {/* Barra lateral: solo escritorio */}
       <aside className="hidden w-64 shrink-0 flex-col gap-6 bg-sunk px-4 py-6 md:flex">
-        <div className="px-2">
+        <div className="flex items-center justify-between pl-2">
           <Logo size={28} surface="var(--sunk)" />
+          <ThemeToggle />
         </div>
         <SpaceSwitch space={space} onChange={changeSpace} />
         <nav aria-label="Vistas" className="flex flex-col gap-1">
@@ -138,11 +140,12 @@ export default function TaskApp() {
 
       <main className="min-w-0 flex-1 px-4 pb-32 pt-4 md:px-6 md:pb-16 md:pt-10">
         <div className="mx-auto flex max-w-[720px] flex-col gap-6">
-          <div className="flex items-center gap-3 md:hidden">
+          <div className="flex items-center gap-1 md:hidden">
             <Logo size={24} />
             <div className="ml-auto">
               <SpaceSwitch space={space} onChange={changeSpace} compact />
             </div>
+            <ThemeToggle />
           </div>
 
           <header className="flex flex-col gap-1">

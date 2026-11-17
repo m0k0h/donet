@@ -1,11 +1,13 @@
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 import type { Priority, Space, Task } from "./tasks";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-// Sin variables de entorno la app sigue funcionando solo con localStorage.
-export const supabase = url && key ? createClient(url, key) : null;
+// La sesión se guarda en cookies: en local, las cookies de localhost valen para
+// todos los puertos, así que una sola sesión sirve para main y cada worktree.
+// Sin variables de entorno es null y la app muestra la pantalla de configuración.
+export const supabase = url && key ? createBrowserClient(url, key) : null;
 
 type Row = {
   id: string;

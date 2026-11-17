@@ -10,7 +10,7 @@ Primera versión (MVP):
 - Crear, completar y borrar tareas, con fecha y prioridad (P1–P4)
 - Diseño adaptado: barra lateral en escritorio; en móvil, navegación inferior y botón flotante para añadir
 - Identidad propia: logo, tipografía Outfit, magenta en Personal y azul marino en Laboral, modo claro y oscuro
-- Cuenta de usuario y sincronización entre dispositivos con Supabase (sin configurar, los datos se quedan en el navegador con `localStorage`)
+- Cuenta de usuario y sincronización entre dispositivos con Supabase (obligatorio: sin configurar, la app no arranca)
 
 ## Próximos pasos
 

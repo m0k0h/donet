@@ -5,12 +5,11 @@ import {
   SPACES,
   VIEWS,
   filterTasks,
+  loadLegacyTasks,
   loadSpace,
-  loadTasks,
   localTasksUploaded,
   markLocalTasksUploaded,
   saveSpace,
-  saveTasks,
   todayISO,
   type Priority,
   type Space,
@@ -20,6 +19,7 @@ import {
 import { deleteTask, fetchTasks, insertTasks, setTaskDone, supabase } from "@/lib/supabase";
 import AuthScreen from "./AuthScreen";
 import Logo from "./Logo";
+import SetupScreen from "./SetupScreen";
 import ThemeToggle from "./ThemeToggle";
 import { CheckIcon, PlusIcon, SpaceIcon, TrashIcon, ViewIcon } from "./icons";
 
@@ -60,7 +60,12 @@ function SpaceSwitch({ space, onChange, compact }: { space: Space; onChange: (s:
   );
 }
 
+// La app solo funciona con Supabase configurado: no hay modo sin conexión.
 export default function TaskApp() {
+  return supabase ? <Tasks /> : <SetupScreen />;
+}
+
+function Tasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [space, setSpace] = useState<Space>("personal");
@@ -69,24 +74,19 @@ export default function TaskApp() {
   const [due, setDue] = useState("");
   const [priority, setPriority] = useState<Priority>(4);
   const [composerOpen, setComposerOpen] = useState(false);
-  // Con Supabase: undefined = comprobando sesión, null = sin sesión.
-  const [userId, setUserId] = useState<string | null | undefined>(supabase ? undefined : null);
+  // undefined = comprobando sesión, null = sin sesión.
+  const [userId, setUserId] = useState<string | null | undefined>(undefined);
   const [syncError, setSyncError] = useState("");
 
   useEffect(() => {
     setSpace(loadSpace());
-    if (!supabase) {
-      setTasks(loadTasks());
-      setLoaded(true);
-      return;
-    }
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => setUserId(session?.user.id ?? null));
+    const { data } = supabase!.auth.onAuthStateChange((_event, session) => setUserId(session?.user.id ?? null));
     return () => data.subscription.unsubscribe();
   }, []);
 
-  // Al iniciar sesión: sube una vez las tareas de este navegador y carga las de la cuenta.
+  // Al iniciar sesión: sube una vez las tareas antiguas de este navegador y carga las de la cuenta.
   useEffect(() => {
-    if (!supabase || userId === undefined) return;
+    if (userId === undefined) return;
     if (!userId) {
       setTasks([]);
       setLoaded(false);
@@ -96,7 +96,7 @@ export default function TaskApp() {
     (async () => {
       try {
         if (!localTasksUploaded()) {
-          await insertTasks(loadTasks());
+          await insertTasks(loadLegacyTasks());
           markLocalTasksUploaded();
         }
         const remote = await fetchTasks();
@@ -112,10 +112,6 @@ export default function TaskApp() {
       cancelled = true;
     };
   }, [userId]);
-
-  useEffect(() => {
-    if (loaded && !supabase) saveTasks(tasks);
-  }, [tasks, loaded]);
 
   // Guarda un cambio en la base de datos; si falla, vuelve al estado real del servidor.
   function sync(op: Promise<void>) {
@@ -152,7 +148,7 @@ export default function TaskApp() {
       createdAt: Date.now(),
     };
     setTasks((prev) => [...prev, task]);
-    if (supabase) sync(insertTasks([task]));
+    sync(insertTasks([task]));
     setTitle("");
     setDue("");
     setPriority(4);
@@ -160,17 +156,17 @@ export default function TaskApp() {
 
   function toggle(task: Task) {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: !task.done } : t)));
-    if (supabase) sync(setTaskDone(task.id, !task.done));
+    sync(setTaskDone(task.id, !task.done));
   }
   function remove(id: string) {
     setTasks((prev) => prev.filter((t) => t.id !== id));
-    if (supabase) sync(deleteTask(id));
+    sync(deleteTask(id));
   }
 
-  if (supabase && userId === undefined) return <div className="min-h-dvh" />;
-  if (supabase && !userId) return <AuthScreen />;
+  if (userId === undefined) return <div className="min-h-dvh" />;
+  if (!userId) return <AuthScreen />;
 
-  const signOut = supabase && (
+  const signOut = (
     <button
       onClick={() => supabase!.auth.signOut()}
       className="min-h-11 rounded-lg px-3.5 text-sm font-semibold text-ink-soft hover:bg-track"
@@ -205,7 +201,7 @@ export default function TaskApp() {
         </nav>
         {/* Zona de ajustes, abajo del todo */}
         <div className="mt-auto flex items-center justify-between">
-          {signOut || <span />}
+          {signOut}
           <ThemeToggle />
         </div>
       </aside>
@@ -218,7 +214,7 @@ export default function TaskApp() {
               <SpaceSwitch space={space} onChange={changeSpace} compact />
             </div>
           </div>
-          {signOut && <div className="-mt-4 flex justify-end md:hidden">{signOut}</div>}
+          <div className="-mt-4 flex justify-end md:hidden">{signOut}</div>
 
           {syncError && (
             <p role="alert" className="rounded-xl bg-sunk px-4 py-3 text-sm font-semibold text-danger">

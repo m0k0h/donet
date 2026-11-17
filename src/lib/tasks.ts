@@ -45,9 +45,11 @@ export function filterTasks(all: Task[], space: Space, view: View): Task[] {
   );
 }
 
+// Tareas que guardaban las versiones antiguas en el navegador. Solo se leen para
+// subirlas a la cuenta la primera vez que se inicia sesión.
 const KEY = "donet.tasks.v1";
 
-export function loadTasks(): Task[] {
+export function loadLegacyTasks(): Task[] {
   try {
     const raw: Task[] = JSON.parse(localStorage.getItem(KEY) ?? "[]");
     // Las tareas creadas antes de existir los espacios pasan a Personal.
@@ -55,12 +57,6 @@ export function loadTasks(): Task[] {
   } catch {
     return [];
   }
-}
-
-export function saveTasks(tasks: Task[]) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(tasks));
-  } catch {}
 }
 
 const SPACE_KEY = "donet.space.v1";

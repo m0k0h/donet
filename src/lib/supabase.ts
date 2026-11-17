@@ -70,6 +70,22 @@ export async function setTaskDone(id: string, done: boolean) {
   if (error) throw error;
 }
 
+export type TaskChanges = Pick<Task, "space" | "title" | "priority"> & Partial<Pick<Task, "projectId" | "description" | "due">>;
+
+// Guarda los cambios de una tarea. Si cambia de sección o de proyecto, sus
+// subtareas (`descendants`) se mueven con ella.
+export async function updateTask(id: string, c: TaskChanges, descendants: string[]) {
+  const place = { space: c.space, project_id: c.projectId ?? null };
+  const { error } = await supabase!
+    .from("tasks")
+    .update({ ...place, title: c.title, description: c.description ?? null, due: c.due ?? null, priority: c.priority })
+    .eq("id", id);
+  if (error) throw error;
+  if (!descendants.length) return;
+  const { error: subError } = await supabase!.from("tasks").update(place).in("id", descendants);
+  if (subError) throw subError;
+}
+
 export async function deleteTask(id: string) {
   const { error } = await supabase!.from("tasks").delete().eq("id", id);
   if (error) throw error;
@@ -109,5 +125,19 @@ export async function insertProject(p: Project) {
     color: p.color,
     created_at: new Date(p.createdAt).toISOString(),
   });
+  if (error) throw error;
+}
+
+export async function updateProject(id: string, c: Pick<Project, "name" | "color" | "parentId">) {
+  const { error } = await supabase!
+    .from("projects")
+    .update({ name: c.name, color: c.color, parent_id: c.parentId ?? null })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+// Borra el proyecto; la base de datos borra también sus subproyectos y sus tareas.
+export async function deleteProject(id: string) {
+  const { error } = await supabase!.from("projects").delete().eq("id", id);
   if (error) throw error;
 }

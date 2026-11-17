@@ -91,6 +91,11 @@ export const childProjects = (all: Project[], space: Space, parentId?: string) =
     .filter((p) => p.space === space && p.parentId === parentId)
     .sort((a, b) => a.createdAt - b.createdAt);
 
+// Todos los subproyectos (a cualquier profundidad) de un proyecto.
+export function descendantProjectIds(all: Project[], id: string): string[] {
+  return all.filter((p) => p.parentId === id).flatMap((p) => [p.id, ...descendantProjectIds(all, p.id)]);
+}
+
 // Lista los proyectos en orden de árbol con su profundidad, para los desplegables.
 export function flattenProjects(all: Project[], space: Space, parentId?: string, depth = 0): { project: Project; depth: number }[] {
   return childProjects(all, space, parentId).flatMap((p) => [

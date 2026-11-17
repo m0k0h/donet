@@ -70,14 +70,14 @@ export default function ProjectTree({
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: projectHex(p.color) }} />
                   <span className="truncate">{p.name}</span>
                 </button>
-                <span className={`w-6 shrink-0 text-right text-[13px] group-hover/row:hidden group-focus-within/row:hidden ${active ? "" : "text-muted"}`}>
+                <span className={`min-w-10 shrink-0 pl-2 pr-3.5 text-right text-[13px] group-hover/row:hidden group-has-[:focus-visible]/row:hidden ${active ? "" : "text-muted"}`}>
                   {pending || ""}
                 </span>
                 <button
                   onClick={() => onAdd(p.id)}
                   aria-label={`Nuevo proyecto dentro de ${p.name}`}
                   title="Nuevo subproyecto"
-                  className="hidden h-11 w-9 shrink-0 place-items-center text-muted hover:text-ink group-hover/row:grid group-focus-within/row:grid"
+                  className="hidden h-11 w-11 shrink-0 place-items-center rounded-lg text-muted hover:text-ink group-hover/row:grid group-has-[:focus-visible]/row:grid"
                 >
                   <PlusIcon size={16} />
                 </button>

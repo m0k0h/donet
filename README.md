@@ -11,6 +11,7 @@ Primera versión (MVP):
 - Dos formas de crear tareas: **rápida** (solo el texto) y **completa** (descripción, fecha, prioridad, sección y proyecto)
 - **Proyectos** propios en cada sección, con color opcional y anidables (proyectos dentro de proyectos), en árbol en la barra lateral
 - **Subtareas** a cualquier profundidad
+- Todo se puede editar después: pulsa una tarea para cambiarla (o moverla de proyecto o sección, con sus subtareas) y usa el lápiz de un proyecto para renombrarlo, cambiarle el color, moverlo o borrarlo
 - Las tareas creadas fuera de un proyecto van a **Entrada**
 - Diseño adaptado: barra lateral en escritorio; en móvil, navegación inferior y botón flotante para añadir
 - Identidad propia: logo, tipografía Outfit, magenta en Personal y azul marino en Laboral, modo claro y oscuro
@@ -18,7 +19,6 @@ Primera versión (MVP):
 
 ## Próximos pasos
 
-- [ ] Renombrar, mover y borrar proyectos
 - [ ] Etiquetas
 - [ ] Fechas en lenguaje natural ("mañana a las 10")
 - [ ] Tareas recurrentes

@@ -118,3 +118,10 @@ export const SwapIcon = ({ size }: P) => (
     <path d="M7 4v16M7 20l-3.5-3.5M7 20l3.5-3.5M17 20V4M17 4l-3.5 3.5M17 4l3.5 3.5" />
   </Icon>
 );
+
+export const PencilIcon = ({ size }: P) => (
+  <Icon size={size}>
+    <path d="M4 20h4L19 9l-4-4L4 16z" />
+    <path d="M13.5 6.5l4 4" />
+  </Icon>
+);

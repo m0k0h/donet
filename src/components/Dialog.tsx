@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
-import { CloseIcon } from "./icons";
+import { useEffect, useRef, type ReactNode, type SelectHTMLAttributes } from "react";
+import { ChevronIcon, CloseIcon } from "./icons";
 
 // Ventana modal sobre <dialog>: atrapa el foco, se cierra con Escape o tocando fuera.
 // En móvil sale desde abajo; en escritorio, centrada.
@@ -32,7 +32,7 @@ export default function Dialog({
       onClose={onClose}
       onClick={(e) => e.target === ref.current && onClose()}
       aria-label={title}
-      className="m-0 mt-auto w-full max-w-none rounded-t-2xl bg-bg p-0 text-ink backdrop:bg-black/40 md:m-auto md:max-w-[520px] md:rounded-2xl"
+      className="m-0 mt-auto w-full max-w-none overflow-visible rounded-t-2xl bg-bg p-0 text-ink backdrop:bg-black/40 md:m-auto md:max-w-[520px] md:rounded-2xl"
     >
       <div className="flex flex-col gap-4 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
         <div className="flex items-center justify-between gap-3">
@@ -54,3 +54,15 @@ export default function Dialog({
 
 export const fieldClass = "min-h-11 w-full rounded-lg bg-sunk px-3.5 text-base text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent";
 export const labelClass = "flex flex-col gap-1.5 text-sm font-semibold text-ink-soft";
+
+// Desplegable con flecha propia, separada del borde (la nativa queda pegada al final).
+export function Select({ className = "", ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <div className="relative">
+      <select {...props} className={`${fieldClass} appearance-none pr-10 ${className}`} />
+      <span className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-muted">
+        <ChevronIcon size={16} open />
+      </span>
+    </div>
+  );
+}

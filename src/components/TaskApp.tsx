@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import {
   SPACES,
   VIEWS,
+  descendantProjectIds,
   isTree,
   loadLegacyTasks,
   localTasksUploaded,
@@ -22,6 +23,7 @@ import {
   type Task,
 } from "@/lib/tasks";
 import {
+  deleteProject,
   deleteTask,
   fetchProjects,
   fetchTasks,
@@ -29,6 +31,8 @@ import {
   insertTasks,
   setTaskDone,
   supabase,
+  updateProject,
+  updateTask,
 } from "@/lib/supabase";
 import AuthScreen from "./AuthScreen";
 import Dialog from "./Dialog";
@@ -38,7 +42,7 @@ import ProjectTree from "./ProjectTree";
 import SetupScreen from "./SetupScreen";
 import TaskDialog, { type TaskDraft } from "./TaskDialog";
 import ThemeToggle from "./ThemeToggle";
-import { CheckIcon, FolderIcon, PlusIcon, SlidersIcon, SpaceIcon, SubtaskIcon, SwapIcon, TrashIcon, ViewIcon } from "./icons";
+import { CheckIcon, FolderIcon, PencilIcon, PlusIcon, SlidersIcon, SpaceIcon, SubtaskIcon, SwapIcon, TrashIcon, ViewIcon } from "./icons";
 
 const PRIORITY_CIRCLE: Record<Priority, string> = {
   1: "border-[#c4121f] bg-[#c4121f]/15",
@@ -101,7 +105,9 @@ function Tasks({ space }: { space: Space }) {
   const [title, setTitle] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
   const [taskDialog, setTaskDialog] = useState<TaskDraft | null>(null);
-  const [projectDialog, setProjectDialog] = useState<{ parentId?: string } | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  // Nuevo proyecto (con su padre, si se crea dentro de otro) o edición de uno existente.
+  const [projectDialog, setProjectDialog] = useState<{ parentId?: string; project?: Project } | null>(null);
   const [projectsSheet, setProjectsSheet] = useState(false);
   // undefined = comprobando sesión, null = sin sesión.
   const [userId, setUserId] = useState<string | null | undefined>(undefined);
@@ -226,6 +232,36 @@ function Tasks({ space }: { space: Space }) {
     createTask({ space: parent.space, projectId: parent.projectId, parentId: parent.id, title: text, priority: 4 });
   }
 
+  // Guarda los cambios de una tarea. Si cambia de sección o proyecto, sus subtareas van con ella.
+  function saveTask(task: Task, d: TaskDraft) {
+    const descendants = descendantIds(tasks, task.id);
+    const sub = new Set(descendants);
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === task.id
+          ? { ...t, ...d }
+          : sub.has(t.id)
+            ? { ...t, space: d.space, projectId: d.projectId }
+            : t,
+      ),
+    );
+    sync(updateTask(task.id, d, descendants));
+  }
+
+  function saveProject(project: Project, p: { name: string; color: string; parentId?: string }) {
+    setProjects((prev) => prev.map((x) => (x.id === project.id ? { ...x, ...p } : x)));
+    sync(updateProject(project.id, p));
+  }
+
+  // Al borrar un proyecto se van sus subproyectos y sus tareas (la base de datos hace lo mismo).
+  function removeProject(project: Project) {
+    const gone = new Set([project.id, ...descendantProjectIds(projects, project.id)]);
+    setProjects((prev) => prev.filter((p) => !gone.has(p.id)));
+    setTasks((prev) => prev.filter((t) => !t.projectId || !gone.has(t.projectId)));
+    setSelection(INBOX);
+    sync(deleteProject(project.id));
+  }
+
   function createProject(p: { name: string; color: string; parentId?: string }) {
     const created: Project = { id: crypto.randomUUID(), space, createdAt: Date.now(), ...p };
     setProjects((prev) => [...prev, created]);
@@ -332,7 +368,17 @@ function Tasks({ space }: { space: Space }) {
               {project && (
                 <span className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ background: projectHex(project.color) }} />
               )}
-              <span className="min-w-0 break-words">{heading}</span>
+              <span className="min-w-0 flex-1 break-words">{heading}</span>
+              {project && (
+                <button
+                  onClick={() => setProjectDialog({ project })}
+                  aria-label={`Editar proyecto ${project.name}`}
+                  title="Editar proyecto"
+                  className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink"
+                >
+                  <PencilIcon size={20} />
+                </button>
+              )}
             </h1>
             <p className="text-sm text-muted">
               {[spaceLabel, ...ancestors.map((a) => a.name)].join(" › ")} ·{" "}
@@ -371,10 +417,10 @@ function Tasks({ space }: { space: Space }) {
                 Añadir
               </button>
             </div>
-            <p className="px-1 text-[13px] text-muted">
-              Se guarda en {project ? project.name : "Entrada"}
-              {destDue ? ", para hoy" : ""}
-            </p>
+            {/* Solo en Hoy y Próximo: ahí no se ve a dónde va la tarea nueva. */}
+            {sel.kind === "view" && sel.view !== "inbox" && (
+              <p className="px-1 text-[13px] text-muted">Se guarda en Entrada{destDue ? ", para hoy" : ""}</p>
+            )}
           </form>
 
           {loaded && roots.length === 0 && (
@@ -401,6 +447,7 @@ function Tasks({ space }: { space: Space }) {
                         .join(" · ")
                 }
                 onToggle={toggle}
+                onEdit={setEditingTask}
                 onRemove={remove}
                 onAddSubtask={addSubtask}
               />
@@ -467,7 +514,9 @@ function Tasks({ space }: { space: Space }) {
           space={space}
           projects={projects}
           parentId={projectDialog.parentId}
-          onCreate={createProject}
+          project={projectDialog.project}
+          onSave={(p) => (projectDialog.project ? saveProject(projectDialog.project, p) : createProject(p))}
+          onDelete={projectDialog.project && (() => removeProject(projectDialog.project!))}
           onClose={() => setProjectDialog(null)}
         />
       )}
@@ -476,8 +525,26 @@ function Tasks({ space }: { space: Space }) {
         <TaskDialog
           initial={taskDialog}
           projects={projects}
-          onCreate={createTask}
+          onSave={createTask}
           onClose={() => setTaskDialog(null)}
+        />
+      )}
+
+      {editingTask && (
+        <TaskDialog
+          editing
+          subtask={!!editingTask.parentId}
+          initial={{
+            space: editingTask.space,
+            projectId: editingTask.projectId,
+            title: editingTask.title,
+            description: editingTask.description,
+            due: editingTask.due,
+            priority: editingTask.priority,
+          }}
+          projects={projects}
+          onSave={(d) => saveTask(editingTask, d)}
+          onClose={() => setEditingTask(null)}
         />
       )}
     </div>
@@ -492,6 +559,7 @@ function TaskRow({
   context,
   childrenOf,
   onToggle,
+  onEdit,
   onRemove,
   onAddSubtask,
 }: {
@@ -502,6 +570,7 @@ function TaskRow({
   context?: string;
   childrenOf: (id: string) => Task[];
   onToggle: (t: Task) => void;
+  onEdit: (t: Task) => void;
   onRemove: (id: string) => void;
   onAddSubtask: (parent: Task, title: string) => void;
 }) {
@@ -540,7 +609,12 @@ function TaskRow({
             <span className={`h-5 w-5 rounded-full border-2 ${PRIORITY_CIRCLE[t.priority]}`} />
           )}
         </button>
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-2.5">
+        {/* Pulsar la tarea la abre para editarla. */}
+        <button
+          onClick={() => onEdit(t)}
+          aria-label={`Editar: ${t.title}`}
+          className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-lg py-2.5 text-left"
+        >
           <span className={`break-words ${t.done ? "text-muted line-through" : ""}`}>{t.title}</span>
           {t.description && <span className="line-clamp-2 break-words text-sm text-ink-soft">{t.description}</span>}
           {t.done ? (
@@ -550,7 +624,7 @@ function TaskRow({
               {meta.join(" · ")}
             </span>
           )}
-        </div>
+        </button>
         {tree && (
           <button
             onClick={() => setAdding((a) => !a)}
@@ -582,6 +656,7 @@ function TaskRow({
               tree={tree}
               childrenOf={childrenOf}
               onToggle={onToggle}
+              onEdit={onEdit}
               onRemove={onRemove}
               onAddSubtask={onAddSubtask}
             />

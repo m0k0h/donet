@@ -5,24 +5,40 @@ import { useEffect, useState } from "react";
 import {
   SPACES,
   VIEWS,
-  filterTasks,
+  isTree,
   loadLegacyTasks,
   localTasksUploaded,
   markLocalTasksUploaded,
+  projectHex,
   saveSpace,
+  sortTasks,
   spacePath,
+  tasksIn,
   todayISO,
   type Priority,
+  type Project,
+  type Selection,
   type Space,
   type Task,
-  type View,
 } from "@/lib/tasks";
-import { deleteTask, fetchTasks, insertTasks, setTaskDone, supabase } from "@/lib/supabase";
+import {
+  deleteTask,
+  fetchProjects,
+  fetchTasks,
+  insertProject,
+  insertTasks,
+  setTaskDone,
+  supabase,
+} from "@/lib/supabase";
 import AuthScreen from "./AuthScreen";
+import Dialog from "./Dialog";
 import Logo from "./Logo";
+import ProjectDialog from "./ProjectDialog";
+import ProjectTree from "./ProjectTree";
 import SetupScreen from "./SetupScreen";
+import TaskDialog, { type TaskDraft } from "./TaskDialog";
 import ThemeToggle from "./ThemeToggle";
-import { CheckIcon, PlusIcon, SpaceIcon, SwapIcon, TrashIcon, ViewIcon } from "./icons";
+import { CheckIcon, FolderIcon, PlusIcon, SlidersIcon, SpaceIcon, SubtaskIcon, SwapIcon, TrashIcon, ViewIcon } from "./icons";
 
 const PRIORITY_CIRCLE: Record<Priority, string> = {
   1: "border-[#c4121f] bg-[#c4121f]/15",
@@ -70,14 +86,23 @@ export default function TaskApp({ space }: { space: Space }) {
   return supabase ? <Tasks space={space} /> : <SetupScreen />;
 }
 
+const INBOX: Selection = { kind: "view", view: "inbox" };
+
+// Todas las subtareas (a cualquier profundidad) de una tarea.
+function descendantIds(all: Task[], id: string): string[] {
+  return all.filter((t) => t.parentId === id).flatMap((t) => [t.id, ...descendantIds(all, t.id)]);
+}
+
 function Tasks({ space }: { space: Space }) {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [view, setView] = useState<View>("inbox");
+  const [selection, setSelection] = useState<Selection>(INBOX);
   const [title, setTitle] = useState("");
-  const [due, setDue] = useState("");
-  const [priority, setPriority] = useState<Priority>(4);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [taskDialog, setTaskDialog] = useState<TaskDraft | null>(null);
+  const [projectDialog, setProjectDialog] = useState<{ parentId?: string } | null>(null);
+  const [projectsSheet, setProjectsSheet] = useState(false);
   // undefined = comprobando sesión, null = sin sesión.
   const [userId, setUserId] = useState<string | null | undefined>(undefined);
   const [syncError, setSyncError] = useState("");
@@ -95,6 +120,7 @@ function Tasks({ space }: { space: Space }) {
     if (userId === undefined) return;
     if (!userId) {
       setTasks([]);
+      setProjects([]);
       setLoaded(false);
       return;
     }
@@ -105,9 +131,10 @@ function Tasks({ space }: { space: Space }) {
           await insertTasks(loadLegacyTasks());
           markLocalTasksUploaded();
         }
-        const remote = await fetchTasks();
+        const [remoteTasks, remoteProjects] = await Promise.all([fetchTasks(), fetchProjects()]);
         if (cancelled) return;
-        setTasks(remote);
+        setTasks(remoteTasks);
+        setProjects(remoteProjects);
         setSyncError("");
       } catch {
         if (!cancelled) setSyncError("No se han podido cargar las tareas. Comprueba la conexión.");
@@ -124,44 +151,98 @@ function Tasks({ space }: { space: Space }) {
     op.then(() => setSyncError("")).catch(async () => {
       setSyncError("No se ha podido guardar el cambio. Comprueba la conexión.");
       try {
-        setTasks(await fetchTasks());
+        const [remoteTasks, remoteProjects] = await Promise.all([fetchTasks(), fetchProjects()]);
+        setTasks(remoteTasks);
+        setProjects(remoteProjects);
       } catch {}
     });
   }
 
   const today = todayISO();
-  const visible = filterTasks(tasks, space, view);
-  const pending = (v: View) => filterTasks(tasks, space, v).filter((t) => !t.done).length;
-  const current = VIEWS.find((v) => v.id === view)!;
   const spaceLabel = SPACES.find((s) => s.id === space)!.label;
-  const count = pending(view);
+  const projectById = (id?: string) => projects.find((p) => p.id === id);
 
-  function addTask(e: React.FormEvent) {
-    e.preventDefault();
-    const t = title.trim();
-    if (!t) return;
+  // Si el proyecto elegido no es de esta sección (o ya no existe), se muestra Entrada.
+  const sel: Selection =
+    selection.kind === "project" && projectById(selection.id)?.space !== space ? INBOX : selection;
+  const project = sel.kind === "project" ? projectById(sel.id) : undefined;
+
+  const list = tasksIn(tasks, space, sel);
+  const tree = isTree(sel);
+  const childrenOf = (id: string) => sortTasks(list.filter((t) => t.parentId === id));
+  // En árbol, las raíces son las tareas cuya madre no está en la lista.
+  const roots = sortTasks(tree ? list.filter((t) => !t.parentId || !list.some((p) => p.id === t.parentId)) : list);
+
+  const pendingIn = (s: Selection) => tasksIn(tasks, space, s).filter((t) => !t.done).length;
+  const count = list.filter((t) => !t.done).length;
+
+  // Ruta del proyecto (Casa › Cocina) para el subtítulo.
+  const ancestors: Project[] = [];
+  for (let p = projectById(project?.parentId); p; p = projectById(p.parentId)) ancestors.unshift(p);
+
+  // Dónde caen las tareas nuevas: en el proyecto abierto o, si no, en Entrada; en Hoy, con fecha de hoy.
+  const destProjectId = project?.id;
+  const destDue = sel.kind === "view" && sel.view === "today" ? today : undefined;
+
+  function select(s: Selection) {
+    setSelection(s);
+    setProjectsSheet(false);
+  }
+
+  function createTask(d: TaskDraft & { parentId?: string }) {
     const task: Task = {
       id: crypto.randomUUID(),
-      space,
-      title: t,
+      space: d.space,
+      projectId: d.projectId,
+      parentId: d.parentId,
+      title: d.title,
+      description: d.description,
       done: false,
-      priority,
-      due: due || (view === "today" ? today : undefined),
+      priority: d.priority,
+      due: d.due,
       createdAt: Date.now(),
     };
     setTasks((prev) => [...prev, task]);
     sync(insertTasks([task]));
+  }
+
+  // Modo rápido: solo el texto.
+  function quickAdd(e: React.FormEvent) {
+    e.preventDefault();
+    const t = title.trim();
+    if (!t) return;
+    createTask({ space, projectId: destProjectId, title: t, due: destDue, priority: 4 });
     setTitle("");
-    setDue("");
-    setPriority(4);
+  }
+
+  // Modo completo: abre el formulario con lo que ya se haya escrito.
+  function openTaskDialog() {
+    setTaskDialog({ space, projectId: destProjectId, title: title.trim(), due: destDue, priority: 4 });
+    setTitle("");
+    setComposerOpen(false);
+  }
+
+  function addSubtask(parent: Task, text: string) {
+    createTask({ space: parent.space, projectId: parent.projectId, parentId: parent.id, title: text, priority: 4 });
+  }
+
+  function createProject(p: { name: string; color: string; parentId?: string }) {
+    const created: Project = { id: crypto.randomUUID(), space, createdAt: Date.now(), ...p };
+    setProjects((prev) => [...prev, created]);
+    setSelection({ kind: "project", id: created.id });
+    sync(insertProject(created));
   }
 
   function toggle(task: Task) {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: !task.done } : t)));
     sync(setTaskDone(task.id, !task.done));
   }
+  // Al borrar una tarea se van también sus subtareas (la base de datos hace lo mismo).
   function remove(id: string) {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+    setTasks((prev) => {
+      const gone = new Set([id, ...descendantIds(prev, id)]);
+      return prev.filter((t) => !gone.has(t.id));
+    });
     sync(deleteTask(id));
   }
 
@@ -177,30 +258,52 @@ function Tasks({ space }: { space: Space }) {
     </button>
   );
 
+  const projectTree = (
+    <ProjectTree
+      space={space}
+      projects={projects}
+      selectedId={project?.id}
+      pendingOf={(id) => pendingIn({ kind: "project", id })}
+      onSelect={(id) => select({ kind: "project", id })}
+      onAdd={(parentId) => {
+        setProjectsSheet(false);
+        setProjectDialog({ parentId });
+      }}
+    />
+  );
+
+  const heading = project ? project.name : VIEWS.find((v) => sel.kind === "view" && v.id === sel.view)!.label;
+
   return (
     <div data-space={space} className="flex min-h-dvh">
       {/* Barra lateral: solo escritorio */}
-      <aside className="hidden w-64 shrink-0 flex-col gap-6 bg-sunk px-4 py-6 md:flex">
+      <aside className="sticky top-0 hidden h-dvh w-72 shrink-0 flex-col gap-6 overflow-y-auto bg-sunk px-4 py-6 md:flex">
         <div className="pl-2">
           <Logo size={28} surface="var(--sunk)" />
         </div>
         <SpaceSwitch space={space} showLabel />
         <nav aria-label="Vistas" className="flex flex-col gap-1">
-          {VIEWS.map((v) => (
-            <button
-              key={v.id}
-              onClick={() => setView(v.id)}
-              aria-current={view === v.id ? "page" : undefined}
-              className={`flex min-h-11 items-center gap-3 rounded-lg px-3.5 text-left text-[15px] ${
-                view === v.id ? "bg-accent-soft font-bold text-accent-ink" : "font-medium hover:bg-track"
-              }`}
-            >
-              <ViewIcon view={v.id} />
-              <span className="flex-1">{v.label}</span>
-              <span className={`text-[13px] ${view === v.id ? "" : "text-muted"}`}>{pending(v.id) || ""}</span>
-            </button>
-          ))}
+          {VIEWS.map((v) => {
+            const active = sel.kind === "view" && sel.view === v.id;
+            return (
+              <button
+                key={v.id}
+                onClick={() => select({ kind: "view", view: v.id })}
+                aria-current={active ? "page" : undefined}
+                className={`flex min-h-11 items-center gap-3 rounded-lg px-3.5 text-left text-[15px] ${
+                  active ? "bg-accent-soft font-bold text-accent-ink" : "font-medium hover:bg-track"
+                }`}
+              >
+                <ViewIcon view={v.id} />
+                <span className="flex-1">{v.label}</span>
+                <span className={`text-[13px] ${active ? "" : "text-muted"}`}>
+                  {pendingIn({ kind: "view", view: v.id }) || ""}
+                </span>
+              </button>
+            );
+          })}
         </nav>
+        {projectTree}
         {/* Zona de ajustes, abajo del todo */}
         <div className="mt-auto flex items-center justify-between">
           {signOut}
@@ -225,98 +328,83 @@ function Tasks({ space }: { space: Space }) {
           )}
 
           <header className="flex flex-col gap-1">
-            <h1 className="text-[30px] font-extrabold leading-tight tracking-[-0.02em] md:text-[34px]">
-              {current.label}
+            <h1 className="flex items-center gap-3 text-[30px] font-extrabold leading-tight tracking-[-0.02em] md:text-[34px]">
+              {project && (
+                <span className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ background: projectHex(project.color) }} />
+              )}
+              <span className="min-w-0 break-words">{heading}</span>
             </h1>
             <p className="text-sm text-muted">
-              {spaceLabel} · {count === 1 ? "1 tarea pendiente" : `${count} tareas pendientes`}
+              {[spaceLabel, ...ancestors.map((a) => a.name)].join(" › ")} ·{" "}
+              {count === 1 ? "1 tarea pendiente" : `${count} tareas pendientes`}
             </p>
           </header>
 
+          {/* Modo rápido: escribe y Enter. El botón de ajustes abre el modo completo. */}
           <form
-            onSubmit={addTask}
-            className={`${composerOpen ? "flex" : "hidden"} flex-col gap-3 rounded-xl bg-sunk p-4 md:flex`}
+            onSubmit={quickAdd}
+            className={`${composerOpen ? "flex" : "hidden"} flex-col gap-1.5 rounded-xl bg-sunk p-3 md:flex`}
           >
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Añadir tarea…"
-              aria-label="Nombre de la tarea"
-              autoFocus={composerOpen}
-              className="w-full bg-transparent py-1 text-base outline-none placeholder:text-muted"
-            />
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
               <input
-                type="date"
-                value={due}
-                onChange={(e) => setDue(e.target.value)}
-                aria-label="Fecha"
-                className="min-h-9 rounded-lg bg-bg px-3.5 text-sm font-medium text-ink-soft"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Añadir tarea…"
+                aria-label="Nombre de la tarea"
+                autoFocus={composerOpen}
+                className="min-h-11 min-w-0 flex-1 bg-transparent px-1 text-base outline-none placeholder:text-muted"
               />
-              <select
-                value={priority}
-                onChange={(e) => setPriority(Number(e.target.value) as Priority)}
-                aria-label="Prioridad"
-                className="min-h-9 rounded-lg bg-bg px-3.5 text-sm font-medium text-ink-soft"
+              <button
+                type="button"
+                onClick={openTaskDialog}
+                aria-label="Más opciones"
+                title="Más opciones: descripción, fecha, prioridad, proyecto…"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink"
               >
-                <option value={1}>Prioridad 1</option>
-                <option value={2}>Prioridad 2</option>
-                <option value={3}>Prioridad 3</option>
-                <option value={4}>Sin prioridad</option>
-              </select>
+                <SlidersIcon />
+              </button>
               <button
                 type="submit"
                 disabled={!title.trim()}
-                className="ml-auto min-h-9 rounded-lg bg-accent px-5 text-sm font-bold text-white disabled:opacity-40"
+                className="min-h-11 shrink-0 rounded-lg bg-accent px-4 text-sm font-bold text-white disabled:opacity-40"
               >
-                Añadir tarea
+                Añadir
               </button>
             </div>
+            <p className="px-1 text-[13px] text-muted">
+              Se guarda en {project ? project.name : "Entrada"}
+              {destDue ? ", para hoy" : ""}
+            </p>
           </form>
 
-          {loaded && visible.length === 0 && (
+          {loaded && roots.length === 0 && (
             <p className="py-16 text-center text-muted">Nada por aquí. ¡Te has ganado un donete!</p>
           )}
 
           <ul className="flex flex-col">
-            {visible.map((t) => {
-              const overdue = !t.done && !!t.due && t.due < today;
-              return (
-                <li key={t.id} className="group flex items-start gap-1 border-b border-line py-1.5 last:border-b-0">
-                  <button
-                    onClick={() => toggle(t)}
-                    aria-label={`${t.done ? "Marcar como pendiente" : "Completar"}: ${t.title}`}
-                    className="grid h-11 w-11 shrink-0 place-items-center"
-                  >
-                    {t.done ? (
-                      <span className="grid h-6 w-6 place-items-center rounded-full bg-green text-on-green">
-                        <CheckIcon size={14} />
-                      </span>
-                    ) : (
-                      <span className={`h-5 w-5 rounded-full border-2 ${PRIORITY_CIRCLE[t.priority]}`} />
-                    )}
-                  </button>
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-2.5">
-                    <span className={`break-words ${t.done ? "text-muted line-through" : ""}`}>{t.title}</span>
-                    {t.done ? (
-                      <span className="text-[13px] font-semibold text-green">Hecha</span>
-                    ) : (
-                      <span className={`text-[13px] ${overdue ? "font-semibold text-danger" : "text-muted"}`}>
-                        {dueLabel(t.due, today)}
-                        {t.priority < 4 && ` · P${t.priority}`}
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => remove(t.id)}
-                    aria-label={`Eliminar: ${t.title}`}
-                    className="grid h-11 w-11 shrink-0 place-items-center text-muted hover:text-danger md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
-                  >
-                    <TrashIcon size={18} />
-                  </button>
-                </li>
-              );
-            })}
+            {roots.map((t) => (
+              <TaskRow
+                key={t.id}
+                task={t}
+                depth={0}
+                today={today}
+                tree={tree}
+                childrenOf={childrenOf}
+                context={
+                  tree
+                    ? undefined
+                    : [
+                        tasks.find((p) => p.id === t.parentId)?.title,
+                        projectById(t.projectId)?.name ?? "Entrada",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")
+                }
+                onToggle={toggle}
+                onRemove={remove}
+                onAddSubtask={addSubtask}
+              />
+            ))}
           </ul>
         </div>
       </main>
@@ -333,25 +421,198 @@ function Tasks({ space }: { space: Space }) {
         </span>
       </button>
 
-      {/* Barra inferior: solo móvil. Vistas a la izquierda, tema a la derecha. */}
+      {/* Barra inferior: solo móvil. Vistas y proyectos a la izquierda, tema a la derecha. */}
       <div className="fixed inset-x-0 bottom-0 flex items-center gap-1 bg-sunk px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
         <nav aria-label="Vistas" className="flex flex-1 gap-1">
-          {VIEWS.map((v) => (
-            <button
-              key={v.id}
-              onClick={() => setView(v.id)}
-              aria-current={view === v.id ? "page" : undefined}
-              className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
-                view === v.id ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
-              }`}
-            >
-              <ViewIcon view={v.id} size={22} />
-              {v.label}
-            </button>
-          ))}
+          {VIEWS.map((v) => {
+            const active = sel.kind === "view" && sel.view === v.id;
+            return (
+              <button
+                key={v.id}
+                onClick={() => select({ kind: "view", view: v.id })}
+                aria-current={active ? "page" : undefined}
+                className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
+                  active ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
+                }`}
+              >
+                <ViewIcon view={v.id} size={22} />
+                {v.label}
+              </button>
+            );
+          })}
+          <button
+            onClick={() => setProjectsSheet(true)}
+            aria-current={project ? "page" : undefined}
+            className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
+              project ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
+            }`}
+          >
+            <FolderIcon size={22} />
+            Proyectos
+          </button>
         </nav>
         <ThemeToggle />
       </div>
+
+      {projectsSheet && (
+        <Dialog title={`Proyectos · ${spaceLabel}`} onClose={() => setProjectsSheet(false)}>
+          <div className="max-h-[60dvh] overflow-y-auto">
+            {projectTree}
+          </div>
+        </Dialog>
+      )}
+
+      {projectDialog && (
+        <ProjectDialog
+          space={space}
+          projects={projects}
+          parentId={projectDialog.parentId}
+          onCreate={createProject}
+          onClose={() => setProjectDialog(null)}
+        />
+      )}
+
+      {taskDialog && (
+        <TaskDialog
+          initial={taskDialog}
+          projects={projects}
+          onCreate={createTask}
+          onClose={() => setTaskDialog(null)}
+        />
+      )}
     </div>
+  );
+}
+
+function TaskRow({
+  task: t,
+  depth,
+  today,
+  tree,
+  context,
+  childrenOf,
+  onToggle,
+  onRemove,
+  onAddSubtask,
+}: {
+  task: Task;
+  depth: number;
+  today: string;
+  tree: boolean;
+  context?: string;
+  childrenOf: (id: string) => Task[];
+  onToggle: (t: Task) => void;
+  onRemove: (id: string) => void;
+  onAddSubtask: (parent: Task, title: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [sub, setSub] = useState("");
+  const overdue = !t.done && !!t.due && t.due < today;
+  const children = tree ? childrenOf(t.id) : [];
+  const indent = { paddingLeft: depth * 28 };
+
+  function submitSub(e: React.FormEvent) {
+    e.preventDefault();
+    if (!sub.trim()) return;
+    onAddSubtask(t, sub.trim());
+    setSub("");
+  }
+
+  const meta = [
+    t.done ? null : dueLabel(t.due, today),
+    !t.done && t.priority < 4 ? `P${t.priority}` : null,
+    context,
+  ].filter(Boolean);
+
+  return (
+    <li className="flex flex-col">
+      <div className="group flex items-start gap-1 border-b border-line py-1.5" style={indent}>
+        <button
+          onClick={() => onToggle(t)}
+          aria-label={`${t.done ? "Marcar como pendiente" : "Completar"}: ${t.title}`}
+          className="grid h-11 w-11 shrink-0 place-items-center"
+        >
+          {t.done ? (
+            <span className="grid h-6 w-6 place-items-center rounded-full bg-green text-on-green">
+              <CheckIcon size={14} />
+            </span>
+          ) : (
+            <span className={`h-5 w-5 rounded-full border-2 ${PRIORITY_CIRCLE[t.priority]}`} />
+          )}
+        </button>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-2.5">
+          <span className={`break-words ${t.done ? "text-muted line-through" : ""}`}>{t.title}</span>
+          {t.description && <span className="line-clamp-2 break-words text-sm text-ink-soft">{t.description}</span>}
+          {t.done ? (
+            <span className="text-[13px] font-semibold text-green">Hecha</span>
+          ) : (
+            <span className={`text-[13px] ${overdue ? "font-semibold text-danger" : "text-muted"}`}>
+              {meta.join(" · ")}
+            </span>
+          )}
+        </div>
+        {tree && (
+          <button
+            onClick={() => setAdding((a) => !a)}
+            aria-label={`Añadir subtarea a: ${t.title}`}
+            aria-expanded={adding}
+            title="Añadir subtarea"
+            className="grid h-11 w-11 shrink-0 place-items-center text-muted hover:text-ink md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
+          >
+            <SubtaskIcon size={18} />
+          </button>
+        )}
+        <button
+          onClick={() => onRemove(t.id)}
+          aria-label={`Eliminar: ${t.title}`}
+          className="grid h-11 w-11 shrink-0 place-items-center text-muted hover:text-danger md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
+        >
+          <TrashIcon size={18} />
+        </button>
+      </div>
+
+      {children.length > 0 && (
+        <ul className="flex flex-col">
+          {children.map((c) => (
+            <TaskRow
+              key={c.id}
+              task={c}
+              depth={depth + 1}
+              today={today}
+              tree={tree}
+              childrenOf={childrenOf}
+              onToggle={onToggle}
+              onRemove={onRemove}
+              onAddSubtask={onAddSubtask}
+            />
+          ))}
+        </ul>
+      )}
+
+      {adding && (
+        <form
+          onSubmit={submitSub}
+          onKeyDown={(e) => e.key === "Escape" && setAdding(false)}
+          className="flex items-center gap-2 border-b border-line py-1.5"
+          style={{ paddingLeft: (depth + 1) * 28 + 12 }}
+        >
+          <input
+            value={sub}
+            onChange={(e) => setSub(e.target.value)}
+            placeholder="Añadir subtarea…"
+            aria-label={`Nueva subtarea de ${t.title}`}
+            autoFocus
+            className="min-h-11 min-w-0 flex-1 bg-transparent px-1 text-base outline-none placeholder:text-muted"
+          />
+          <button
+            type="submit"
+            disabled={!sub.trim()}
+            className="min-h-9 shrink-0 rounded-lg bg-accent px-4 text-sm font-bold text-white disabled:opacity-40"
+          >
+            Añadir
+          </button>
+        </form>
+      )}
+    </li>
   );
 }

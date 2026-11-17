@@ -1,0 +1,56 @@
+"use client";
+
+import { useEffect, useRef, type ReactNode } from "react";
+import { CloseIcon } from "./icons";
+
+// Ventana modal sobre <dialog>: atrapa el foco, se cierra con Escape o tocando fuera.
+// En móvil sale desde abajo; en escritorio, centrada.
+export default function Dialog({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+
+  // Sin limpieza: llamar a close() dispararía onClose (y en modo estricto, React
+  // monta los efectos dos veces). Al desmontarse, el <dialog> se cierra solo.
+  useEffect(() => {
+    const d = ref.current!;
+    if (d.open) return;
+    d.showModal();
+    // showModal() enfoca el botón de cerrar; mejor el primer campo del formulario.
+    d.querySelector<HTMLElement>("input:not(.sr-only), textarea, select")?.focus();
+  }, []);
+
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      onClick={(e) => e.target === ref.current && onClose()}
+      aria-label={title}
+      className="m-0 mt-auto w-full max-w-none rounded-t-2xl bg-bg p-0 text-ink backdrop:bg-black/40 md:m-auto md:max-w-[520px] md:rounded-2xl"
+    >
+      <div className="flex flex-col gap-4 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-xl font-extrabold">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar"
+            className="-mr-2 grid h-11 w-11 place-items-center rounded-lg text-ink-soft hover:bg-track"
+          >
+            <CloseIcon />
+          </button>
+        </div>
+        {children}
+      </div>
+    </dialog>
+  );
+}
+
+export const fieldClass = "min-h-11 w-full rounded-lg bg-sunk px-3.5 text-base text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent";
+export const labelClass = "flex flex-col gap-1.5 text-sm font-semibold text-ink-soft";

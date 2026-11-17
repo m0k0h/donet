@@ -79,6 +79,40 @@ export const MoonIcon = ({ size }: P) => (
   </Icon>
 );
 
+export const ChevronIcon = ({ size, open }: P & { open?: boolean }) => (
+  <Icon size={size}>
+    <path d={open ? "M6 9l6 6 6-6" : "M9 6l6 6-6 6"} />
+  </Icon>
+);
+
+export const CloseIcon = ({ size }: P) => (
+  <Icon size={size}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </Icon>
+);
+
+// Opciones avanzadas de una tarea (descripción, fecha, proyecto…).
+export const SlidersIcon = ({ size }: P) => (
+  <Icon size={size}>
+    <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+    <circle cx="16" cy="7" r="2" />
+    <circle cx="10" cy="17" r="2" />
+  </Icon>
+);
+
+export const SubtaskIcon = ({ size }: P) => (
+  <Icon size={size}>
+    <path d="M6 4v9a3 3 0 0 0 3 3h9" />
+    <path d="M15 13l3 3-3 3" />
+  </Icon>
+);
+
+export const FolderIcon = ({ size }: P) => (
+  <Icon size={size}>
+    <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+  </Icon>
+);
+
 export const SwapIcon = ({ size }: P) => (
   <Icon size={size}>
     <path d="M7 4v16M7 20l-3.5-3.5M7 20l3.5-3.5M17 20V4M17 4l-3.5 3.5M17 4l3.5 3.5" />

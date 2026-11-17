@@ -1,15 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   SPACES,
   VIEWS,
   filterTasks,
   loadLegacyTasks,
-  loadSpace,
   localTasksUploaded,
   markLocalTasksUploaded,
   saveSpace,
+  spacePath,
   todayISO,
   type Priority,
   type Space,
@@ -39,36 +40,35 @@ function dueLabel(due: string | undefined, today: string) {
   return new Date(due + "T00:00").toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" });
 }
 
-function SpaceSwitch({ space, onChange, compact }: { space: Space; onChange: (s: Space) => void; compact?: boolean }) {
+// Cada sección es una dirección propia, así que el selector son dos enlaces.
+function SpaceSwitch({ space }: { space: Space }) {
   return (
-    <div role="tablist" aria-label="Espacio" className="flex gap-1 rounded-[10px] bg-track p-1">
+    <nav aria-label="Sección" className="flex gap-1 rounded-[10px] bg-track p-1">
       {SPACES.map((s) => (
-        <button
+        <Link
           key={s.id}
-          role="tab"
-          aria-selected={space === s.id}
-          onClick={() => onChange(s.id)}
-          className={`flex min-h-11 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-[7px] text-sm ${
-            compact ? "px-3.5" : "px-3"
-          } ${space === s.id ? "bg-accent font-bold text-white" : "font-semibold text-ink-soft"}`}
+          href={spacePath(s.id)}
+          aria-current={space === s.id ? "page" : undefined}
+          className={`flex min-h-9 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-[7px] px-3 text-sm ${
+            space === s.id ? "bg-accent font-bold text-white" : "font-semibold text-ink-soft hover:text-ink"
+          }`}
         >
-          <SpaceIcon space={s.id} size={compact ? 16 : 18} />
+          <SpaceIcon space={s.id} size={16} />
           {s.label}
-        </button>
+        </Link>
       ))}
-    </div>
+    </nav>
   );
 }
 
 // La app solo funciona con Supabase configurado: no hay modo sin conexión.
-export default function TaskApp() {
-  return supabase ? <Tasks /> : <SetupScreen />;
+export default function TaskApp({ space }: { space: Space }) {
+  return supabase ? <Tasks space={space} /> : <SetupScreen />;
 }
 
-function Tasks() {
+function Tasks({ space }: { space: Space }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [space, setSpace] = useState<Space>("personal");
   const [view, setView] = useState<View>("inbox");
   const [title, setTitle] = useState("");
   const [due, setDue] = useState("");
@@ -78,8 +78,10 @@ function Tasks() {
   const [userId, setUserId] = useState<string | null | undefined>(undefined);
   const [syncError, setSyncError] = useState("");
 
+  // Recuerda la última sección abierta para volver a ella al entrar por la dirección principal.
+  useEffect(() => saveSpace(space), [space]);
+
   useEffect(() => {
-    setSpace(loadSpace());
     const { data } = supabase!.auth.onAuthStateChange((_event, session) => setUserId(session?.user.id ?? null));
     return () => data.subscription.unsubscribe();
   }, []);
@@ -123,10 +125,6 @@ function Tasks() {
     });
   }
 
-  const changeSpace = (s: Space) => {
-    setSpace(s);
-    saveSpace(s);
-  };
   const today = todayISO();
   const visible = filterTasks(tasks, space, view);
   const pending = (v: View) => filterTasks(tasks, space, v).filter((t) => !t.done).length;
@@ -182,7 +180,6 @@ function Tasks() {
         <div className="pl-2">
           <Logo size={28} surface="var(--sunk)" />
         </div>
-        <SpaceSwitch space={space} onChange={changeSpace} />
         <nav aria-label="Vistas" className="flex flex-col gap-1">
           {VIEWS.map((v) => (
             <button
@@ -199,22 +196,22 @@ function Tasks() {
             </button>
           ))}
         </nav>
-        {/* Zona de ajustes, abajo del todo */}
-        <div className="mt-auto flex items-center justify-between">
-          {signOut}
-          <ThemeToggle />
+        {/* Abajo del todo: las dos secciones y los ajustes */}
+        <div className="mt-auto flex flex-col gap-3">
+          <SpaceSwitch space={space} />
+          <div className="flex items-center justify-between">
+            {signOut}
+            <ThemeToggle />
+          </div>
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 px-4 pb-32 pt-4 md:px-6 md:pb-16 md:pt-10">
+      <main className="min-w-0 flex-1 px-4 pb-44 pt-4 md:px-6 md:pb-16 md:pt-10">
         <div className="mx-auto flex max-w-[720px] flex-col gap-6">
-          <div className="flex items-center gap-3 md:hidden">
+          <div className="flex items-center justify-between md:hidden">
             <Logo size={24} />
-            <div className="ml-auto">
-              <SpaceSwitch space={space} onChange={changeSpace} compact />
-            </div>
+            {signOut}
           </div>
-          <div className="-mt-4 flex justify-end md:hidden">{signOut}</div>
 
           {syncError && (
             <p role="alert" className="rounded-xl bg-sunk px-4 py-3 text-sm font-semibold text-danger">
@@ -324,31 +321,34 @@ function Tasks() {
         onClick={() => setComposerOpen((o) => !o)}
         aria-label={composerOpen ? "Cerrar añadir tarea" : "Añadir tarea"}
         aria-expanded={composerOpen}
-        className="fixed bottom-24 right-4 grid h-14 w-14 place-items-center rounded-2xl bg-accent text-white shadow-lg md:hidden"
+        className="fixed bottom-36 right-4 grid h-14 w-14 place-items-center rounded-2xl bg-accent text-white shadow-lg md:hidden"
       >
         <span className={`transition-transform ${composerOpen ? "rotate-45" : ""}`}>
           <PlusIcon size={26} />
         </span>
       </button>
 
-      {/* Barra inferior: solo móvil. Vistas a la izquierda, ajustes a la derecha. */}
-      <div className="fixed inset-x-0 bottom-0 flex items-center gap-1 bg-sunk px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
-        <nav aria-label="Vistas" className="flex flex-1 gap-1">
-          {VIEWS.map((v) => (
-            <button
-              key={v.id}
-              onClick={() => setView(v.id)}
-              aria-current={view === v.id ? "page" : undefined}
-              className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
-                view === v.id ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
-              }`}
-            >
-              <ViewIcon view={v.id} size={22} />
-              {v.label}
-            </button>
-          ))}
-        </nav>
-        <ThemeToggle />
+      {/* Barra inferior: solo móvil. Arriba las vistas y el tema; debajo, las dos secciones. */}
+      <div className="fixed inset-x-0 bottom-0 flex flex-col gap-2 bg-sunk px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
+        <div className="flex items-center gap-1">
+          <nav aria-label="Vistas" className="flex flex-1 gap-1">
+            {VIEWS.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => setView(v.id)}
+                aria-current={view === v.id ? "page" : undefined}
+                className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
+                  view === v.id ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
+                }`}
+              >
+                <ViewIcon view={v.id} size={22} />
+                {v.label}
+              </button>
+            ))}
+          </nav>
+          <ThemeToggle />
+        </div>
+        <SpaceSwitch space={space} />
       </div>
     </div>
   );

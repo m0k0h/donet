@@ -2,10 +2,13 @@ export type Priority = 1 | 2 | 3 | 4;
 
 export type Space = "personal" | "work";
 
-export const SPACES: { id: Space; label: string }[] = [
-  { id: "personal", label: "Personal" },
-  { id: "work", label: "Laboral" },
+// Las dos secciones son fijas y cada una tiene su propia dirección: /personal y /laboral.
+export const SPACES: { id: Space; label: string; slug: string }[] = [
+  { id: "personal", label: "Personal", slug: "personal" },
+  { id: "work", label: "Laboral", slug: "laboral" },
 ];
+
+export const spacePath = (space: Space) => `/${SPACES.find((s) => s.id === space)!.slug}`;
 
 export type Task = {
   id: string;

@@ -5,7 +5,7 @@ Mi gestor de tareas personal, inspirado en Todoist y adaptado a mí. Sí, el nom
 ## Estado
 
 Primera versión (MVP):
-- Dos espacios separados, **Personal** y **Laboral**, con cambio rápido entre ellos
+- Dos secciones fijas, **Personal** y **Laboral**, cada una con su dirección propia: `/personal` y `/laboral`. La dirección principal lleva a la última que abriste
 - Vistas **Entrada**, **Hoy** y **Próximo**
 - Crear, completar y borrar tareas, con fecha y prioridad (P1–P4)
 - Diseño adaptado: barra lateral en escritorio; en móvil, navegación inferior y botón flotante para añadir

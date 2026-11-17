@@ -9,16 +9,20 @@ export default function Logo({ size = 28, surface = "var(--bg)" }: { size?: numb
     >
       done
       <span
-        className="relative grid place-items-center bg-green font-black tracking-normal text-on-green"
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size * 0.26,
-          fontSize: size * 0.93,
-          paddingBottom: size * 0.07,
-        }}
+        className="relative grid place-items-center bg-green text-on-green"
+        style={{ width: size, height: size, borderRadius: size * 0.26 }}
       >
-        t
+        <span className="sr-only">t</span>
+        {/* La t va dibujada a mano, con el pie curvado, para que no parezca una cruz. */}
+        <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true">
+          <path
+            d="M22 8v21q0 7.5 7.5 7.5H35M13 18.5h20.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="7.5"
+            strokeLinejoin="round"
+          />
+        </svg>
         <svg
           width={mark}
           height={mark}

@@ -22,7 +22,7 @@ import AuthScreen from "./AuthScreen";
 import Logo from "./Logo";
 import SetupScreen from "./SetupScreen";
 import ThemeToggle from "./ThemeToggle";
-import { CheckIcon, PlusIcon, SpaceIcon, TrashIcon, ViewIcon } from "./icons";
+import { CheckIcon, PlusIcon, SpaceIcon, SwapIcon, TrashIcon, ViewIcon } from "./icons";
 
 const PRIORITY_CIRCLE: Record<Priority, string> = {
   1: "border-[#c4121f] bg-[#c4121f]/15",
@@ -40,24 +40,28 @@ function dueLabel(due: string | undefined, today: string) {
   return new Date(due + "T00:00").toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" });
 }
 
-// Cada sección es una dirección propia, así que el selector son dos enlaces.
-function SpaceSwitch({ space }: { space: Space }) {
+// Solo hay dos secciones, así que un único botón muestra la actual y lleva a la otra.
+// Cada sección es una dirección propia, por eso es un enlace. En móvil va sin el nombre.
+function SpaceSwitch({ space, showLabel }: { space: Space; showLabel?: boolean }) {
+  const current = SPACES.find((s) => s.id === space)!;
+  const other = SPACES.find((s) => s.id !== space)!;
   return (
-    <nav aria-label="Sección" className="flex gap-1 rounded-[10px] bg-track p-1">
-      {SPACES.map((s) => (
-        <Link
-          key={s.id}
-          href={spacePath(s.id)}
-          aria-current={space === s.id ? "page" : undefined}
-          className={`flex min-h-9 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-[7px] px-3 text-sm ${
-            space === s.id ? "bg-accent font-bold text-white" : "font-semibold text-ink-soft hover:text-ink"
-          }`}
-        >
-          <SpaceIcon space={s.id} size={16} />
-          {s.label}
-        </Link>
-      ))}
-    </nav>
+    <Link
+      href={spacePath(other.id)}
+      aria-label={`Sección: ${current.label}. Cambiar a ${other.label}`}
+      title={`Cambiar a ${other.label}`}
+      className={`flex min-h-11 items-center rounded-lg border border-ring/60 bg-bg hover:border-ring ${
+        showLabel ? "gap-2.5 px-2.5" : "gap-2 pl-2 pr-2.5"
+      }`}
+    >
+      <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md bg-accent text-white">
+        <SpaceIcon space={space} size={15} />
+      </span>
+      {showLabel && <span className="flex-1 text-[15px] font-bold">{current.label}</span>}
+      <span className="text-muted">
+        <SwapIcon size={16} />
+      </span>
+    </Link>
   );
 }
 
@@ -180,6 +184,7 @@ function Tasks({ space }: { space: Space }) {
         <div className="pl-2">
           <Logo size={28} surface="var(--sunk)" />
         </div>
+        <SpaceSwitch space={space} showLabel />
         <nav aria-label="Vistas" className="flex flex-col gap-1">
           {VIEWS.map((v) => (
             <button
@@ -196,21 +201,21 @@ function Tasks({ space }: { space: Space }) {
             </button>
           ))}
         </nav>
-        {/* Abajo del todo: las dos secciones y los ajustes */}
-        <div className="mt-auto flex flex-col gap-3">
-          <SpaceSwitch space={space} />
-          <div className="flex items-center justify-between">
-            {signOut}
-            <ThemeToggle />
-          </div>
+        {/* Zona de ajustes, abajo del todo */}
+        <div className="mt-auto flex items-center justify-between">
+          {signOut}
+          <ThemeToggle />
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 px-4 pb-44 pt-4 md:px-6 md:pb-16 md:pt-10">
+      <main className="min-w-0 flex-1 px-4 pb-32 pt-4 md:px-6 md:pb-16 md:pt-10">
         <div className="mx-auto flex max-w-[720px] flex-col gap-6">
           <div className="flex items-center justify-between md:hidden">
             <Logo size={24} />
-            {signOut}
+            <div className="flex items-center gap-1">
+              {signOut}
+              <SpaceSwitch space={space} />
+            </div>
           </div>
 
           {syncError && (
@@ -321,34 +326,31 @@ function Tasks({ space }: { space: Space }) {
         onClick={() => setComposerOpen((o) => !o)}
         aria-label={composerOpen ? "Cerrar añadir tarea" : "Añadir tarea"}
         aria-expanded={composerOpen}
-        className="fixed bottom-36 right-4 grid h-14 w-14 place-items-center rounded-2xl bg-accent text-white shadow-lg md:hidden"
+        className="fixed bottom-24 right-4 grid h-14 w-14 place-items-center rounded-2xl bg-accent text-white shadow-lg md:hidden"
       >
         <span className={`transition-transform ${composerOpen ? "rotate-45" : ""}`}>
           <PlusIcon size={26} />
         </span>
       </button>
 
-      {/* Barra inferior: solo móvil. Arriba las vistas y el tema; debajo, las dos secciones. */}
-      <div className="fixed inset-x-0 bottom-0 flex flex-col gap-2 bg-sunk px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
-        <div className="flex items-center gap-1">
-          <nav aria-label="Vistas" className="flex flex-1 gap-1">
-            {VIEWS.map((v) => (
-              <button
-                key={v.id}
-                onClick={() => setView(v.id)}
-                aria-current={view === v.id ? "page" : undefined}
-                className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
-                  view === v.id ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
-                }`}
-              >
-                <ViewIcon view={v.id} size={22} />
-                {v.label}
-              </button>
-            ))}
-          </nav>
-          <ThemeToggle />
-        </div>
-        <SpaceSwitch space={space} />
+      {/* Barra inferior: solo móvil. Vistas a la izquierda, tema a la derecha. */}
+      <div className="fixed inset-x-0 bottom-0 flex items-center gap-1 bg-sunk px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
+        <nav aria-label="Vistas" className="flex flex-1 gap-1">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              onClick={() => setView(v.id)}
+              aria-current={view === v.id ? "page" : undefined}
+              className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
+                view === v.id ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
+              }`}
+            >
+              <ViewIcon view={v.id} size={22} />
+              {v.label}
+            </button>
+          ))}
+        </nav>
+        <ThemeToggle />
       </div>
     </div>
   );

@@ -78,3 +78,9 @@ export const MoonIcon = ({ size }: P) => (
     <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
   </Icon>
 );
+
+export const SwapIcon = ({ size }: P) => (
+  <Icon size={size}>
+    <path d="M7 4v16M7 20l-3.5-3.5M7 20l3.5-3.5M17 20V4M17 4l-3.5 3.5M17 4l3.5 3.5" />
+  </Icon>
+);

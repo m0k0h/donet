@@ -78,3 +78,20 @@ export function saveSpace(space: Space) {
     localStorage.setItem(SPACE_KEY, space);
   } catch {}
 }
+
+// Marca que las tareas guardadas en este navegador ya se subieron a la cuenta.
+const UPLOADED_KEY = "donet.uploaded.v1";
+
+export function localTasksUploaded(): boolean {
+  try {
+    return localStorage.getItem(UPLOADED_KEY) === "1";
+  } catch {
+    return true;
+  }
+}
+
+export function markLocalTasksUploaded() {
+  try {
+    localStorage.setItem(UPLOADED_KEY, "1");
+  } catch {}
+}

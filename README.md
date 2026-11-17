@@ -10,14 +10,13 @@ Primera versión (MVP):
 - Crear, completar y borrar tareas, con fecha y prioridad (P1–P4)
 - Diseño adaptado: barra lateral en escritorio; en móvil, navegación inferior y botón flotante para añadir
 - Identidad propia: logo, tipografía Outfit, magenta en Personal y azul marino en Laboral, modo claro y oscuro
-- Los datos se guardan en el navegador (`localStorage`)
+- Cuenta de usuario y sincronización entre dispositivos con Supabase (sin configurar, los datos se quedan en el navegador con `localStorage`)
 
 ## Próximos pasos
 
 - [ ] Proyectos y etiquetas
 - [ ] Fechas en lenguaje natural ("mañana a las 10")
 - [ ] Tareas recurrentes
-- [ ] Cuenta de usuario y sincronización entre dispositivos (Supabase)
 - [ ] Instalable como app (PWA)
 
 ## Desarrollo
@@ -28,5 +27,12 @@ npm run dev
 ```
 
 Abre http://localhost:3000.
+
+### Base de datos (Supabase)
+
+1. Ejecuta `supabase/schema.sql` en el SQL Editor del proyecto de Supabase (crea la tabla `tasks` con seguridad por filas).
+2. Copia `.env.example` a `.env.local` y rellena la clave publicable.
+
+Al iniciar sesión por primera vez, las tareas guardadas en el navegador se suben a la cuenta.
 
 Stack: Next.js · TypeScript · Tailwind CSS

@@ -7,6 +7,8 @@ import {
   filterTasks,
   loadSpace,
   loadTasks,
+  localTasksUploaded,
+  markLocalTasksUploaded,
   saveSpace,
   saveTasks,
   todayISO,
@@ -15,6 +17,8 @@ import {
   type Task,
   type View,
 } from "@/lib/tasks";
+import { deleteTask, fetchTasks, insertTasks, setTaskDone, supabase } from "@/lib/supabase";
+import AuthScreen from "./AuthScreen";
 import Logo from "./Logo";
 import { CheckIcon, PlusIcon, SpaceIcon, TrashIcon, ViewIcon } from "./icons";
 
@@ -64,15 +68,63 @@ export default function TaskApp() {
   const [due, setDue] = useState("");
   const [priority, setPriority] = useState<Priority>(4);
   const [composerOpen, setComposerOpen] = useState(false);
+  // Con Supabase: undefined = comprobando sesión, null = sin sesión.
+  const [userId, setUserId] = useState<string | null | undefined>(supabase ? undefined : null);
+  const [syncError, setSyncError] = useState("");
 
   useEffect(() => {
-    setTasks(loadTasks());
     setSpace(loadSpace());
-    setLoaded(true);
+    if (!supabase) {
+      setTasks(loadTasks());
+      setLoaded(true);
+      return;
+    }
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => setUserId(session?.user.id ?? null));
+    return () => data.subscription.unsubscribe();
   }, []);
+
+  // Al iniciar sesión: sube una vez las tareas de este navegador y carga las de la cuenta.
   useEffect(() => {
-    if (loaded) saveTasks(tasks);
+    if (!supabase || userId === undefined) return;
+    if (!userId) {
+      setTasks([]);
+      setLoaded(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!localTasksUploaded()) {
+          await insertTasks(loadTasks());
+          markLocalTasksUploaded();
+        }
+        const remote = await fetchTasks();
+        if (cancelled) return;
+        setTasks(remote);
+        setSyncError("");
+      } catch {
+        if (!cancelled) setSyncError("No se han podido cargar las tareas. Comprueba la conexión.");
+      }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (loaded && !supabase) saveTasks(tasks);
   }, [tasks, loaded]);
+
+  // Guarda un cambio en la base de datos; si falla, vuelve al estado real del servidor.
+  function sync(op: Promise<void>) {
+    op.then(() => setSyncError("")).catch(async () => {
+      setSyncError("No se ha podido guardar el cambio. Comprueba la conexión.");
+      try {
+        setTasks(await fetchTasks());
+      } catch {}
+    });
+  }
 
   const changeSpace = (s: Space) => {
     setSpace(s);
@@ -89,26 +141,42 @@ export default function TaskApp() {
     e.preventDefault();
     const t = title.trim();
     if (!t) return;
-    setTasks((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        space,
-        title: t,
-        done: false,
-        priority,
-        due: due || (view === "today" ? today : undefined),
-        createdAt: Date.now(),
-      },
-    ]);
+    const task: Task = {
+      id: crypto.randomUUID(),
+      space,
+      title: t,
+      done: false,
+      priority,
+      due: due || (view === "today" ? today : undefined),
+      createdAt: Date.now(),
+    };
+    setTasks((prev) => [...prev, task]);
+    if (supabase) sync(insertTasks([task]));
     setTitle("");
     setDue("");
     setPriority(4);
   }
 
-  const toggle = (id: string) =>
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
-  const remove = (id: string) => setTasks((prev) => prev.filter((t) => t.id !== id));
+  function toggle(task: Task) {
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: !task.done } : t)));
+    if (supabase) sync(setTaskDone(task.id, !task.done));
+  }
+  function remove(id: string) {
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+    if (supabase) sync(deleteTask(id));
+  }
+
+  if (supabase && userId === undefined) return <div className="min-h-dvh" />;
+  if (supabase && !userId) return <AuthScreen />;
+
+  const signOut = supabase && (
+    <button
+      onClick={() => supabase!.auth.signOut()}
+      className="min-h-11 rounded-full px-3.5 text-sm font-semibold text-ink-soft hover:bg-track"
+    >
+      Cerrar sesión
+    </button>
+  );
 
   return (
     <div data-space={space} className="flex min-h-dvh">
@@ -134,6 +202,7 @@ export default function TaskApp() {
             </button>
           ))}
         </nav>
+        {signOut && <div className="mt-auto flex">{signOut}</div>}
       </aside>
 
       <main className="min-w-0 flex-1 px-4 pb-32 pt-4 md:px-6 md:pb-16 md:pt-10">
@@ -144,6 +213,13 @@ export default function TaskApp() {
               <SpaceSwitch space={space} onChange={changeSpace} compact />
             </div>
           </div>
+          {signOut && <div className="-mt-4 flex justify-end md:hidden">{signOut}</div>}
+
+          {syncError && (
+            <p role="alert" className="rounded-xl bg-sunk px-4 py-3 text-sm font-semibold text-danger">
+              {syncError}
+            </p>
+          )}
 
           <header className="flex flex-col gap-1">
             <h1 className="text-[30px] font-extrabold leading-tight tracking-[-0.02em] md:text-[34px]">
@@ -205,7 +281,7 @@ export default function TaskApp() {
               return (
                 <li key={t.id} className="group flex items-start gap-1 border-b border-line py-1.5 last:border-b-0">
                   <button
-                    onClick={() => toggle(t.id)}
+                    onClick={() => toggle(t)}
                     aria-label={`${t.done ? "Marcar como pendiente" : "Completar"}: ${t.title}`}
                     className="grid h-11 w-11 shrink-0 place-items-center"
                   >

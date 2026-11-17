@@ -173,7 +173,7 @@ export default function TaskApp() {
   const signOut = supabase && (
     <button
       onClick={() => supabase!.auth.signOut()}
-      className="min-h-11 rounded-full px-3.5 text-sm font-semibold text-ink-soft hover:bg-track"
+      className="min-h-11 rounded-lg px-3.5 text-sm font-semibold text-ink-soft hover:bg-track"
     >
       Cerrar sesión
     </button>

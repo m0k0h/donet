@@ -18,7 +18,7 @@ export default function ThemeToggle() {
       aria-label={label}
       title={label}
       suppressHydrationWarning
-      className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-ink-soft hover:bg-track hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+      className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
     >
       {/* El icono lo decide el CSS según el tema, para que no parpadee al cargar. */}
       <span className="theme-icon-light">

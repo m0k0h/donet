@@ -183,9 +183,8 @@ export default function TaskApp() {
     <div data-space={space} className="flex min-h-dvh">
       {/* Barra lateral: solo escritorio */}
       <aside className="hidden w-64 shrink-0 flex-col gap-6 bg-sunk px-4 py-6 md:flex">
-        <div className="flex items-center justify-between pl-2">
+        <div className="pl-2">
           <Logo size={28} surface="var(--sunk)" />
-          <ThemeToggle />
         </div>
         <SpaceSwitch space={space} onChange={changeSpace} />
         <nav aria-label="Vistas" className="flex flex-col gap-1">
@@ -204,17 +203,20 @@ export default function TaskApp() {
             </button>
           ))}
         </nav>
-        {signOut && <div className="mt-auto flex">{signOut}</div>}
+        {/* Zona de ajustes, abajo del todo */}
+        <div className="mt-auto flex items-center justify-between">
+          {signOut || <span />}
+          <ThemeToggle />
+        </div>
       </aside>
 
       <main className="min-w-0 flex-1 px-4 pb-32 pt-4 md:px-6 md:pb-16 md:pt-10">
         <div className="mx-auto flex max-w-[720px] flex-col gap-6">
-          <div className="flex items-center gap-1 md:hidden">
+          <div className="flex items-center gap-3 md:hidden">
             <Logo size={24} />
             <div className="ml-auto">
               <SpaceSwitch space={space} onChange={changeSpace} compact />
             </div>
-            <ThemeToggle />
           </div>
           {signOut && <div className="-mt-4 flex justify-end md:hidden">{signOut}</div>}
 
@@ -333,25 +335,25 @@ export default function TaskApp() {
         </span>
       </button>
 
-      {/* Navegación inferior: solo móvil */}
-      <nav
-        aria-label="Vistas"
-        className="fixed inset-x-0 bottom-0 flex gap-1 bg-sunk px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden"
-      >
-        {VIEWS.map((v) => (
-          <button
-            key={v.id}
-            onClick={() => setView(v.id)}
-            aria-current={view === v.id ? "page" : undefined}
-            className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
-              view === v.id ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
-            }`}
-          >
-            <ViewIcon view={v.id} size={22} />
-            {v.label}
-          </button>
-        ))}
-      </nav>
+      {/* Barra inferior: solo móvil. Vistas a la izquierda, ajustes a la derecha. */}
+      <div className="fixed inset-x-0 bottom-0 flex items-center gap-1 bg-sunk px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
+        <nav aria-label="Vistas" className="flex flex-1 gap-1">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              onClick={() => setView(v.id)}
+              aria-current={view === v.id ? "page" : undefined}
+              className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
+                view === v.id ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
+              }`}
+            >
+              <ViewIcon view={v.id} size={22} />
+              {v.label}
+            </button>
+          ))}
+        </nav>
+        <ThemeToggle />
+      </div>
     </div>
   );
 }

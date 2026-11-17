@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { flattenProjects, type Priority, type Project, type Space } from "@/lib/tasks";
 import DatePicker from "./DatePicker";
+import { DetectedDateChip, useDetectedDate } from "./DetectedDate";
 import Dialog, { Select, fieldClass, labelClass } from "./Dialog";
 
 export type TaskDraft = {
@@ -11,6 +12,7 @@ export type TaskDraft = {
   title: string;
   description?: string;
   due?: string;
+  dueTime?: string;
   priority: Priority;
 };
 
@@ -34,21 +36,41 @@ export default function TaskDialog({
 }) {
   const [d, setD] = useState(initial);
   const set = (patch: Partial<TaskDraft>) => setD((prev) => ({ ...prev, ...patch }));
+  // La fecha escrita en el texto solo se busca si el texto ha cambiado: al editar una tarea
+  // guardada como «Martes de carnaval» no se vuelve a proponer.
+  const { detected, ignore } = useDetectedDate(d.title, d.title !== initial.title);
+  const due = detected?.due ?? d.due;
+  const dueTime = due ? (detected?.time ?? d.dueTime) : undefined;
+
+  // Al tocar la fecha o la hora a mano, lo detectado en el texto se da por bueno
+  // (sale del texto) y el cambio se aplica encima.
+  function setWhen(patch: Pick<TaskDraft, "due" | "dueTime">) {
+    set({ ...(detected && { title: detected.title }), due, dueTime, ...patch });
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!d.title.trim()) return;
-    onSave({ ...d, title: d.title.trim(), description: d.description?.trim() || undefined, due: d.due || undefined });
+    onSave({
+      ...d,
+      title: detected?.title ?? d.title.trim(),
+      description: d.description?.trim() || undefined,
+      due: due || undefined,
+      dueTime: dueTime || undefined,
+    });
     onClose();
   }
 
   return (
     <Dialog title={editing ? "Editar tarea" : "Nueva tarea"} onClose={onClose}>
       <form onSubmit={submit} className="flex flex-col gap-4">
-        <label className={labelClass}>
-          Tarea
-          <input value={d.title} onChange={(e) => set({ title: e.target.value })} className={fieldClass} />
-        </label>
+        <div className="flex flex-col gap-1.5">
+          <label className={labelClass}>
+            Tarea
+            <input value={d.title} onChange={(e) => set({ title: e.target.value })} className={fieldClass} />
+          </label>
+          {detected && <DetectedDateChip detected={detected} onIgnore={ignore} />}
+        </div>
         <label className={labelClass}>
           Descripción
           <textarea
@@ -60,9 +82,9 @@ export default function TaskDialog({
         </label>
 
         <div className="grid grid-cols-2 gap-3">
-          <div className={labelClass}>
+          <div className={`${labelClass} col-span-2`}>
             <span aria-hidden="true">Fecha</span>
-            <DatePicker value={d.due} onChange={(due) => set({ due })} />
+            <DatePicker value={due} time={dueTime} onChange={(v) => setWhen({ due: v.due, dueTime: v.time })} />
           </div>
           <label className={labelClass}>
             Prioridad
@@ -74,7 +96,7 @@ export default function TaskDialog({
             </Select>
           </label>
           {!subtask && (
-            <label className={`${labelClass} col-span-2`}>
+            <label className={labelClass}>
               Proyecto
               <Select value={d.projectId ?? ""} onChange={(e) => set({ projectId: e.target.value || undefined })}>
                 <option value="">Entrada</option>

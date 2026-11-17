@@ -19,10 +19,12 @@ type Row = {
   done: boolean;
   priority: Priority;
   due: string | null;
+  due_time?: string | null; // "10:00:00"
   created_at: string;
 };
 
-const COLUMNS = "id, space, project_id, parent_id, title, description, done, priority, due, created_at";
+// Todas las columnas: así la app sigue cargando aunque falte alguna columna nueva por crear.
+const COLUMNS = "*";
 
 const toRow = (t: Task) => ({
   id: t.id,
@@ -34,6 +36,7 @@ const toRow = (t: Task) => ({
   done: t.done,
   priority: t.priority,
   due: t.due ?? null,
+  due_time: (t.due && t.dueTime) || null,
   created_at: new Date(t.createdAt).toISOString(),
 });
 
@@ -47,6 +50,7 @@ const fromRow = (r: Row): Task => ({
   done: r.done,
   priority: r.priority,
   due: r.due ?? undefined,
+  dueTime: (r.due && r.due_time?.slice(0, 5)) || undefined,
   createdAt: Date.parse(r.created_at),
 });
 
@@ -70,7 +74,7 @@ export async function setTaskDone(id: string, done: boolean) {
   if (error) throw error;
 }
 
-export type TaskChanges = Pick<Task, "space" | "title" | "priority"> & Partial<Pick<Task, "projectId" | "description" | "due">>;
+export type TaskChanges = Pick<Task, "space" | "title" | "priority"> & Partial<Pick<Task, "projectId" | "description" | "due" | "dueTime">>;
 
 // Guarda los cambios de una tarea. Si cambia de sección o de proyecto, sus
 // subtareas (`descendants`) se mueven con ella.
@@ -78,7 +82,7 @@ export async function updateTask(id: string, c: TaskChanges, descendants: string
   const place = { space: c.space, project_id: c.projectId ?? null };
   const { error } = await supabase!
     .from("tasks")
-    .update({ ...place, title: c.title, description: c.description ?? null, due: c.due ?? null, priority: c.priority })
+    .update({ ...place, title: c.title, description: c.description ?? null, due: c.due ?? null, due_time: (c.due && c.dueTime) || null, priority: c.priority })
     .eq("id", id);
   if (error) throw error;
   if (!descendants.length) return;

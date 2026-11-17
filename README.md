@@ -13,6 +13,9 @@ Primera versión (MVP):
 - **Subtareas** a cualquier profundidad
 - Todo se puede editar después: pulsa una tarea para cambiarla (o moverla de proyecto o sección, con sus subtareas) y usa el lápiz de un proyecto para renombrarlo, cambiarle el color, moverlo o borrarlo
 - Las tareas creadas fuera de un proyecto van a **Entrada**
+- **Fechas y horas en lenguaje natural**: escribe «mañana», «el viernes», «el próximo lunes», «el 1 de diciembre», «15/3», «en 2 semanas», «este finde»… y también la hora: «a las 10», «a las 21», «a las 9:30», «a las 9 de la noche», «a las 5 y media», «9 AM», «18:45». Se pone esa fecha y hora y se quita del texto. Si no era una fecha, se descarta con la ✕. Solo con hora, la tarea es para hoy (o mañana si esa hora ya ha pasado)
+- Hora opcional en las tareas, también desde el formulario
+- Las descripciones largas se despliegan en la lista con «Ver más», sin abrir la tarea
 - Diseño adaptado: barra lateral en escritorio; en móvil, navegación inferior y botón flotante para añadir
 - Identidad propia: logo, tipografía Outfit, magenta en Personal y azul marino en Laboral, modo claro y oscuro
 - Cuenta de usuario y sincronización entre dispositivos con Supabase (obligatorio: sin configurar, la app no arranca)
@@ -20,7 +23,7 @@ Primera versión (MVP):
 ## Próximos pasos
 
 - [ ] Etiquetas
-- [ ] Fechas en lenguaje natural ("mañana a las 10")
+- [x] Fechas en lenguaje natural ("mañana a las 10")
 - [ ] Tareas recurrentes
 - [ ] Instalable como app (PWA)
 

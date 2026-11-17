@@ -20,6 +20,7 @@ export type Task = {
   done: boolean;
   priority: Priority;
   due?: string; // YYYY-MM-DD
+  dueTime?: string; // HH:MM, solo si hay fecha
   createdAt: number;
 };
 
@@ -62,12 +63,32 @@ export type Selection = { kind: "view"; view: View } | { kind: "project"; id: st
 
 export const todayISO = () => new Date().toLocaleDateString("sv-SE");
 
+// «Hoy», «Mañana», «Ayer» o la fecha corta («vie, 20 nov»), con la hora si la hay.
+export function dueLabel(due: string | undefined, today: string, time?: string) {
+  if (!due) return "Sin fecha";
+  const days = Math.round((Date.parse(due) - Date.parse(today)) / 86400000);
+  const day =
+    days === 0
+      ? "Hoy"
+      : days === -1
+        ? "Ayer"
+        : days === 1
+          ? "Mañana"
+          : new Date(due + "T00:00").toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" });
+  return time ? `${day} ${time}` : day;
+}
+
+// Vencida: fecha pasada o, si es hoy, hora ya pasada.
+export const isOverdue = (t: Pick<Task, "due" | "dueTime">, today: string) =>
+  !!t.due && (t.due < today || (t.due === today && !!t.dueTime && t.dueTime <= new Date().toTimeString().slice(0, 5)));
+
 export const sortTasks = (list: Task[]) =>
   [...list].sort(
     (a, b) =>
       Number(a.done) - Number(b.done) ||
       a.priority - b.priority ||
       (a.due ?? "9999").localeCompare(b.due ?? "9999") ||
+      (a.dueTime ?? "99").localeCompare(b.dueTime ?? "99") ||
       a.createdAt - b.createdAt,
   );
 

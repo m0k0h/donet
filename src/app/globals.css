@@ -13,6 +13,8 @@
   --green: #0a7f55;
   --on-green: #ffffff;
   --danger: #c4121f;
+  --soon: #b45309;
+  --week: #6d28d9;
 }
 
 /* Cada espacio tiene su color: magenta en Personal, azul marino en Laboral. */
@@ -44,6 +46,8 @@
     --green: #34d399;
     --on-green: #16181d;
     --danger: #f87171;
+    --soon: #fbbf24;
+    --week: #a78bfa;
   }
   :root:not([data-theme="light"]) [data-space="personal"] {
     --accent: #c026d3;
@@ -70,6 +74,8 @@
   --green: #34d399;
   --on-green: #16181d;
   --danger: #f87171;
+  --soon: #fbbf24;
+  --week: #a78bfa;
 }
 :root[data-theme="dark"] [data-space="personal"] {
   --accent: #c026d3;
@@ -133,4 +139,32 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-outfit), system-ui, sans-serif;
+}
+
+/* Estado vacío de los filtros: el calendario flota y los destellos parpadean. */
+@keyframes empty-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes empty-shadow {
+  0%, 100% { transform: scaleX(1); opacity: 1; }
+  50% { transform: scaleX(0.82); opacity: 0.6; }
+}
+@keyframes empty-twinkle {
+  0%, 100% { transform: scale(0.6); opacity: 0.3; }
+  50% { transform: scale(1); opacity: 1; }
+}
+@keyframes empty-zz {
+  0% { transform: translate(0, 4px); opacity: 0; }
+  40% { opacity: 1; }
+  100% { transform: translate(6px, -8px); opacity: 0; }
+}
+.empty-float { animation: empty-float 3.2s ease-in-out infinite; }
+.empty-shadow { animation: empty-shadow 3.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.empty-twinkle { animation: empty-twinkle 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.empty-zz { animation: empty-zz 2.8s ease-out infinite; }
+.empty-delay { animation-delay: 0.8s; }
+.empty-delay-2 { animation-delay: 1.6s; }
+@media (prefers-reduced-motion: reduce) {
+  .empty-float, .empty-shadow, .empty-twinkle, .empty-zz { animation: none; }
 }

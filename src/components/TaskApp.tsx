@@ -6,6 +6,8 @@ import {
   SPACES,
   VIEWS,
   descendantProjectIds,
+  dueLabel,
+  isOverdue,
   isTree,
   loadLegacyTasks,
   localTasksUploaded,
@@ -36,6 +38,8 @@ import {
 } from "@/lib/supabase";
 import AuthScreen from "./AuthScreen";
 import ConfirmDialog from "./ConfirmDialog";
+import { DetectedDateChip, useDetectedDate } from "./DetectedDate";
+import { EmptyFilter } from "./EmptyFilter";
 import Dialog from "./Dialog";
 import Logo from "./Logo";
 import ProjectDialog from "./ProjectDialog";
@@ -43,7 +47,36 @@ import ProjectTree from "./ProjectTree";
 import SetupScreen from "./SetupScreen";
 import TaskDialog, { type TaskDraft } from "./TaskDialog";
 import ThemeToggle from "./ThemeToggle";
-import { CheckIcon, FolderIcon, PencilIcon, PlusIcon, SlidersIcon, SpaceIcon, SubtaskIcon, SwapIcon, TrashIcon, ViewIcon } from "./icons";
+import {
+  CalendarIcon,
+  CheckIcon,
+  ClockIcon,
+  FlagIcon,
+  FolderIcon,
+  PencilIcon,
+  PlusIcon,
+  SlidersIcon,
+  SpaceIcon,
+  SubtaskIcon,
+  SwapIcon,
+  TrashIcon,
+  ViewIcon,
+} from "./icons";
+
+const PRIORITY_HEX: Record<Priority, string> = { 1: "#c4121f", 2: "#d97706", 3: "#2563eb", 4: "" };
+
+// Color de la fecha según lo cerca que está: vencida, hoy, mañana, esta semana o más adelante.
+function dueTone(t: Task, today: string) {
+  if (isOverdue(t, today)) return "text-danger";
+  const days = Math.round((Date.parse(t.due!) - Date.parse(today)) / 86400000);
+  if (days === 0) return "text-green";
+  if (days === 1) return "text-[var(--soon)]";
+  if (days < 7) return "text-[var(--week)]";
+  return "text-muted";
+}
+
+// Dónde vive una tarea, para mostrarlo en Hoy y Próximo: su tarea madre y su proyecto (o Entrada).
+type RowContext = { parent?: string; project?: Project };
 
 const PRIORITY_CIRCLE: Record<Priority, string> = {
   1: "border-[#c4121f] bg-[#c4121f]/15",
@@ -51,15 +84,6 @@ const PRIORITY_CIRCLE: Record<Priority, string> = {
   3: "border-[#2563eb] bg-[#2563eb]/15",
   4: "border-ring",
 };
-
-function dueLabel(due: string | undefined, today: string) {
-  if (!due) return "Sin fecha";
-  const days = Math.round((Date.parse(due) - Date.parse(today)) / 86400000);
-  if (days === 0) return "Hoy";
-  if (days === -1) return "Ayer";
-  if (days === 1) return "Mañana";
-  return new Date(due + "T00:00").toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" });
-}
 
 // Solo hay dos secciones, así que un único botón muestra la actual y lleva a la otra.
 // Cada sección es una dirección propia, por eso es un enlace. En móvil va sin el nombre.
@@ -189,13 +213,19 @@ function Tasks({ space }: { space: Space }) {
   const ancestors: Project[] = [];
   for (let p = projectById(project?.parentId); p; p = projectById(p.parentId)) ancestors.unshift(p);
 
-  // Dónde caen las tareas nuevas: en el proyecto abierto o, si no, en Entrada; en Hoy, con fecha de hoy.
+  // Hoy y Próximo son filtros: no se añaden tareas desde ahí. Solo desde Entrada o un proyecto.
+  const canAdd = !(sel.kind === "view" && (sel.view === "today" || sel.view === "upcoming"));
+
+  // Dónde caen las tareas nuevas: en el proyecto abierto o, si no, en Entrada.
   const destProjectId = project?.id;
-  const destDue = sel.kind === "view" && sel.view === "today" ? today : undefined;
+
+  // Fecha escrita en el propio texto («mañana», «el viernes»…).
+  const quickDate = useDetectedDate(title);
 
   function select(s: Selection) {
     setSelection(s);
     setProjectsSheet(false);
+    setComposerOpen(false);
   }
 
   function createTask(d: TaskDraft & { parentId?: string }) {
@@ -209,6 +239,7 @@ function Tasks({ space }: { space: Space }) {
       done: false,
       priority: d.priority,
       due: d.due,
+      dueTime: d.due ? d.dueTime : undefined,
       createdAt: Date.now(),
     };
     setTasks((prev) => [...prev, task]);
@@ -220,19 +251,30 @@ function Tasks({ space }: { space: Space }) {
     e.preventDefault();
     const t = title.trim();
     if (!t) return;
-    createTask({ space, projectId: destProjectId, title: t, due: destDue, priority: 4 });
+    const d = quickDate.detected;
+    createTask({ space, projectId: destProjectId, title: d?.title ?? t, due: d?.due, dueTime: d?.time, priority: 4 });
     setTitle("");
+    quickDate.reset();
   }
 
   // Modo completo: abre el formulario con lo que ya se haya escrito.
   function openTaskDialog() {
-    setTaskDialog({ space, projectId: destProjectId, title: title.trim(), due: destDue, priority: 4 });
+    const d = quickDate.detected;
+    setTaskDialog({
+      space,
+      projectId: destProjectId,
+      title: d?.title ?? title.trim(),
+      due: d?.due,
+      dueTime: d?.time,
+      priority: 4,
+    });
     setTitle("");
+    quickDate.reset();
     setComposerOpen(false);
   }
 
-  function addSubtask(parent: Task, text: string) {
-    createTask({ space: parent.space, projectId: parent.projectId, parentId: parent.id, title: text, priority: 4 });
+  function addSubtask(parent: Task, text: string, due?: string, dueTime?: string) {
+    createTask({ space: parent.space, projectId: parent.projectId, parentId: parent.id, title: text, due, dueTime, priority: 4 });
   }
 
   // Guarda los cambios de una tarea. Si cambia de sección o proyecto, sus subtareas van con ella.
@@ -242,7 +284,7 @@ function Tasks({ space }: { space: Space }) {
     setTasks((prev) =>
       prev.map((t) =>
         t.id === task.id
-          ? { ...t, ...d }
+          ? { ...t, ...d, dueTime: d.due ? d.dueTime : undefined }
           : sub.has(t.id)
             ? { ...t, space: d.space, projectId: d.projectId }
             : t,
@@ -411,44 +453,47 @@ function Tasks({ space }: { space: Space }) {
           </header>
 
           {/* Modo rápido: escribe y Enter. El botón de ajustes abre el modo completo. */}
-          <form
-            onSubmit={quickAdd}
-            className={`${composerOpen ? "flex" : "hidden"} flex-col gap-1.5 rounded-xl bg-sunk p-3 md:flex`}
-          >
-            <div className="flex items-center gap-2">
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Añadir tarea…"
-                aria-label="Nombre de la tarea"
-                autoFocus={composerOpen}
-                className="min-h-11 min-w-0 flex-1 bg-transparent px-1 text-base outline-none placeholder:text-muted"
-              />
-              <button
-                type="button"
-                onClick={openTaskDialog}
-                aria-label="Más opciones"
-                title="Más opciones: descripción, fecha, prioridad, proyecto…"
-                className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink"
-              >
-                <SlidersIcon />
-              </button>
-              <button
-                type="submit"
-                disabled={!title.trim()}
-                className="min-h-11 shrink-0 rounded-lg bg-accent px-4 text-sm font-bold text-white disabled:opacity-40"
-              >
-                Añadir
-              </button>
-            </div>
-            {/* Solo en Hoy y Próximo: ahí no se ve a dónde va la tarea nueva. */}
-            {sel.kind === "view" && sel.view !== "inbox" && (
-              <p className="px-1 text-[13px] text-muted">Se guarda en Entrada{destDue ? ", para hoy" : ""}</p>
-            )}
-          </form>
+          {canAdd && (
+            <form
+              onSubmit={quickAdd}
+              className={`${composerOpen ? "flex" : "hidden"} flex-col gap-1.5 rounded-xl bg-sunk p-3 md:flex`}
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Añadir tarea…"
+                  aria-label="Nombre de la tarea"
+                  autoFocus={composerOpen}
+                  className="min-h-11 min-w-0 flex-1 bg-transparent px-1 text-base outline-none placeholder:text-muted"
+                />
+                <button
+                  type="button"
+                  onClick={openTaskDialog}
+                  aria-label="Más opciones"
+                  title="Más opciones: descripción, fecha, prioridad, proyecto…"
+                  className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink"
+                >
+                  <SlidersIcon />
+                </button>
+                <button
+                  type="submit"
+                  disabled={!title.trim()}
+                  className="min-h-11 shrink-0 rounded-lg bg-accent px-4 text-sm font-bold text-white disabled:opacity-40"
+                >
+                  Añadir
+                </button>
+              </div>
+              {quickDate.detected && <DetectedDateChip detected={quickDate.detected} onIgnore={quickDate.ignore} />}
+            </form>
+          )}
 
           {loaded && roots.length === 0 && (
-            <p className="py-16 text-center text-muted">Nada por aquí. ¡Te has ganado un donete!</p>
+            sel.kind === "view" && sel.view !== "inbox" ? (
+              <EmptyFilter view={sel.view} />
+            ) : (
+              <p className="py-16 text-center text-muted">Nada por aquí. ¡Te has ganado un donete!</p>
+            )
           )}
 
           <ul className="flex flex-col">
@@ -460,15 +505,11 @@ function Tasks({ space }: { space: Space }) {
                 today={today}
                 tree={tree}
                 childrenOf={childrenOf}
+                hideToday={sel.kind === "view" && sel.view === "today"}
                 context={
                   tree
                     ? undefined
-                    : [
-                        tasks.find((p) => p.id === t.parentId)?.title,
-                        projectById(t.projectId)?.name ?? "Entrada",
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")
+                    : { parent: tasks.find((p) => p.id === t.parentId)?.title, project: projectById(t.projectId) }
                 }
                 onToggle={toggle}
                 onEdit={setEditingTask}
@@ -481,16 +522,18 @@ function Tasks({ space }: { space: Space }) {
       </main>
 
       {/* Botón flotante para añadir: solo móvil */}
-      <button
-        onClick={() => setComposerOpen((o) => !o)}
-        aria-label={composerOpen ? "Cerrar añadir tarea" : "Añadir tarea"}
-        aria-expanded={composerOpen}
-        className="fixed bottom-24 right-4 grid h-14 w-14 place-items-center rounded-2xl bg-accent text-white shadow-lg md:hidden"
-      >
-        <span className={`transition-transform ${composerOpen ? "rotate-45" : ""}`}>
-          <PlusIcon size={26} />
-        </span>
-      </button>
+      {canAdd && (
+        <button
+          onClick={() => setComposerOpen((o) => !o)}
+          aria-label={composerOpen ? "Cerrar añadir tarea" : "Añadir tarea"}
+          aria-expanded={composerOpen}
+          className="fixed bottom-24 right-4 grid h-14 w-14 place-items-center rounded-2xl bg-accent text-white shadow-lg md:hidden"
+        >
+          <span className={`transition-transform ${composerOpen ? "rotate-45" : ""}`}>
+            <PlusIcon size={26} />
+          </span>
+        </button>
+      )}
 
       {/* Barra inferior: solo móvil. Vistas y proyectos a la izquierda, tema a la derecha. */}
       <div className="fixed inset-x-0 bottom-0 flex items-center gap-1 bg-sunk px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
@@ -573,6 +616,7 @@ function Tasks({ space }: { space: Space }) {
             title: editingTask.title,
             description: editingTask.description,
             due: editingTask.due,
+            dueTime: editingTask.dueTime,
             priority: editingTask.priority,
           }}
           projects={projects}
@@ -589,6 +633,7 @@ function TaskRow({
   depth,
   today,
   tree,
+  hideToday,
   context,
   childrenOf,
   onToggle,
@@ -600,12 +645,14 @@ function TaskRow({
   depth: number;
   today: string;
   tree: boolean;
-  context?: string;
+  // En Hoy no hace falta repetir «Hoy» en cada tarea: solo se ve la hora.
+  hideToday?: boolean;
+  context?: RowContext;
   childrenOf: (id: string) => Task[];
   onToggle: (t: Task) => void;
   onEdit: (t: Task) => void;
   onRemove: (id: string) => void;
-  onAddSubtask: (parent: Task, title: string) => void;
+  onAddSubtask: (parent: Task, title: string, due?: string, dueTime?: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const subForm = useRef<HTMLFormElement>(null);
@@ -627,22 +674,24 @@ function TaskRow({
     };
   }, [adding]);
   const [sub, setSub] = useState("");
-  const overdue = !t.done && !!t.due && t.due < today;
+  const subDate = useDetectedDate(sub);
+  const overdue = !t.done && isOverdue(t, today);
   const children = tree ? childrenOf(t.id) : [];
   const indent = { paddingLeft: depth * 28 };
 
   function submitSub(e: React.FormEvent) {
     e.preventDefault();
     if (!sub.trim()) return;
-    onAddSubtask(t, sub.trim());
+    const d = subDate.detected;
+    onAddSubtask(t, d?.title ?? sub.trim(), d?.due, d?.time);
     setSub("");
+    subDate.reset();
   }
 
-  const meta = [
-    t.done ? null : dueLabel(t.due, today),
-    !t.done && t.priority < 4 ? `P${t.priority}` : null,
-    context,
-  ].filter(Boolean);
+  const showDue = !t.done && !!t.due;
+  const onlyTime = showDue && hideToday && t.due === today && !overdue;
+  const showPriority = !t.done && t.priority < 4;
+  const showMeta = t.done || (showDue && (!onlyTime || !!t.dueTime)) || showPriority || !!context;
 
   return (
     <li className="flex flex-col">
@@ -660,22 +709,74 @@ function TaskRow({
             <span className={`h-5 w-5 rounded-full border-2 ${PRIORITY_CIRCLE[t.priority]}`} />
           )}
         </button>
-        {/* Pulsar la tarea la abre para editarla. */}
-        <button
-          onClick={() => onEdit(t)}
-          aria-label={`Editar: ${t.title}`}
-          className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-lg py-2.5 text-left"
-        >
-          <span className={`break-words ${t.done ? "text-muted line-through" : ""}`}>{t.title}</span>
-          {t.description && <span className="line-clamp-2 break-words text-sm text-ink-soft">{t.description}</span>}
-          {t.done ? (
-            <span className="text-[13px] font-semibold text-green">Hecha</span>
-          ) : (
-            <span className={`text-[13px] ${overdue ? "font-semibold text-danger" : "text-muted"}`}>
-              {meta.join(" · ")}
-            </span>
+        {/* Pulsar la tarea la abre para editarla (el botón del título es el accesible por teclado;
+            el resto de la zona también responde al ratón). Desplegar la descripción no edita. */}
+        <div onClick={() => onEdit(t)} className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 py-2.5">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(t);
+            }}
+            aria-label={`Editar: ${t.title}`}
+            className="break-words rounded text-left"
+          >
+            <span className={t.done ? "text-muted line-through" : ""}>{t.title}</span>
+          </button>
+          {t.description && <Description text={t.description} />}
+          {showMeta && (
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
+              {t.done && <span className="font-semibold text-green">Hecha</span>}
+              {showDue &&
+                (onlyTime ? (
+                  t.dueTime && (
+                    <span className="inline-flex items-center gap-1 font-medium text-green">
+                      <ClockIcon size={13} />
+                      {t.dueTime}
+                    </span>
+                  )
+                ) : (
+                  <span className={`inline-flex items-center gap-1 font-medium ${dueTone(t, today)}`}>
+                    <CalendarIcon size={13} />
+                    {dueLabel(t.due, today, t.dueTime)}
+                  </span>
+                ))}
+              {showPriority && (
+                <span
+                  className="inline-flex items-center gap-1 font-semibold"
+                  style={{ color: PRIORITY_HEX[t.priority] }}
+                  aria-label={`Prioridad ${t.priority}`}
+                >
+                  <FlagIcon size={13} />P{t.priority}
+                </span>
+              )}
+              {context && (
+                <span className="ml-auto inline-flex min-w-0 max-w-full items-center gap-1.5 text-muted">
+                  {context.parent && (
+                    <>
+                      <SubtaskIcon size={13} />
+                      <span className="min-w-0 truncate">{context.parent}</span>
+                      <span aria-hidden="true">·</span>
+                    </>
+                  )}
+                  {context.project ? (
+                    <>
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ background: projectHex(context.project.color) }}
+                      />
+                      <span className="min-w-0 truncate">{context.project.name}</span>
+                    </>
+                  ) : (
+                    <>
+                      <ViewIcon view="inbox" size={13} />
+                      Entrada
+                    </>
+                  )}
+                </span>
+              )}
+            </div>
           )}
-        </button>
+        </div>
         {tree && (
           <button
             ref={subButton}
@@ -720,9 +821,10 @@ function TaskRow({
         <form
           onSubmit={submitSub}
           ref={subForm}
-          className="flex items-center gap-2 border-b border-line py-1.5"
+          className="flex flex-col gap-1 border-b border-line py-1.5"
           style={{ paddingLeft: (depth + 1) * 28 + 12 }}
         >
+          <div className="flex items-center gap-2">
           <input
             value={sub}
             onChange={(e) => setSub(e.target.value)}
@@ -738,8 +840,48 @@ function TaskRow({
           >
             Añadir
           </button>
+          </div>
+          {subDate.detected && <DetectedDateChip detected={subDate.detected} onIgnore={subDate.ignore} />}
         </form>
       )}
     </li>
+  );
+}
+
+// Descripción de una tarea en la lista: dos líneas y, si es más larga, «Ver más» para leerla entera.
+function Description({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  const ref = useRef<HTMLParagraphElement>(null);
+
+  // ¿Se corta a dos líneas? Se vuelve a mirar si cambia el ancho.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || open) return;
+    const check = () => setLong(el.scrollHeight > el.clientHeight + 1);
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [text, open]);
+
+  return (
+    <div className="flex flex-col items-start">
+      <p ref={ref} className={`whitespace-pre-line break-words text-sm text-ink-soft ${open ? "" : "line-clamp-2"}`}>
+        {text}
+      </p>
+      {(long || open) && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen((o) => !o);
+          }}
+          aria-expanded={open}
+          className="-my-1 rounded py-1 text-[13px] font-semibold text-accent-ink hover:underline"
+        >
+          {open ? "Ver menos" : "Ver más"}
+        </button>
+      )}
+    </div>
   );
 }

@@ -75,3 +75,6 @@ alter table public.tasks add column if not exists description text;
 
 create index if not exists tasks_project_id_idx on public.tasks (project_id);
 create index if not exists tasks_parent_id_idx on public.tasks (parent_id);
+
+-- Hora de la tarea (opcional, solo tiene sentido con fecha).
+alter table public.tasks add column if not exists due_time time;

@@ -298,9 +298,8 @@ function Tasks({ space }: { space: Space }) {
   const ancestors: Project[] = [];
   for (let p = projectById(project?.parentId); p; p = projectById(p.parentId)) ancestors.unshift(p);
 
-  // Hoy y Próximo son filtros: no se añaden tareas desde ahí. Desde una etiqueta sí:
-  // van a Entrada con esa etiqueta puesta.
-  const canAdd = !(sel.kind === "view" && (sel.view === "today" || sel.view === "upcoming"));
+  // Hoy, Próximo y las etiquetas son filtros: no se añaden tareas desde ahí. Solo desde Entrada o un proyecto.
+  const canAdd = isTree(sel);
 
   // Dónde caen las tareas nuevas: en el proyecto abierto o, si no, en Entrada.
   const destProjectId = project?.id;
@@ -308,8 +307,6 @@ function Tasks({ space }: { space: Space }) {
   // Etiquetas escritas con @ y fecha escrita en el propio texto («mañana», «el viernes»…).
   const quickTyped = typedLabels(title);
   const quickDate = useDetectedDate(quickTyped.text);
-  // En una etiqueta, las tareas nuevas la llevan puesta.
-  const quickLabels = label && !quickTyped.names.some((n) => sameName(n, label.name)) ? [label.name, ...quickTyped.names] : quickTyped.names;
 
   function select(s: Selection) {
     setSelection(s);
@@ -366,7 +363,7 @@ function Tasks({ space }: { space: Space }) {
     const t = quickTyped.text.trim();
     if (!t) return;
     const d = quickDate.detected;
-    createTask({ space, projectId: destProjectId, title: d?.title ?? t, due: d?.due, dueTime: d?.time, priority: 4, labels: quickLabels });
+    createTask({ space, projectId: destProjectId, title: d?.title ?? t, due: d?.due, dueTime: d?.time, priority: 4, labels: quickTyped.names });
     setTitle("");
     quickDate.reset();
   }
@@ -381,7 +378,7 @@ function Tasks({ space }: { space: Space }) {
       due: d?.due,
       dueTime: d?.time,
       priority: 4,
-      labels: quickLabels,
+      labels: quickTyped.names,
     });
     setTitle("");
     quickDate.reset();

@@ -5,7 +5,7 @@ import { todayISO } from "@/lib/tasks";
 import { fieldClass } from "./Dialog";
 import { ChevronIcon, ClockIcon, CloseIcon } from "./icons";
 
-const POPOVER_HEIGHT = 480; // alto aproximado del desplegable, con margen
+const POPOVER_HEIGHT = 400; // alto aproximado del desplegable, con margen
 const WEEKDAYS = ["L", "M", "X", "J", "V", "S", "D"];
 
 const iso = (d: Date) => d.toLocaleDateString("sv-SE");
@@ -25,8 +25,9 @@ function label(value: string | undefined, today: string) {
 
 export type DateTime = { due?: string; time?: string };
 
-// Campo de fecha y hora: por defecto «Sin fecha». Al abrirlo ofrece Hoy, Mañana, un calendario
-// y, abajo, un botón para añadir hora (casi nunca hace falta, así que no se muestra de entrada).
+// Campo de fecha y hora: por defecto «Sin fecha». Al abrirlo ofrece Hoy y Mañana en una fila,
+// justo debajo la hora (un botón «Añadir hora», casi nunca hace falta) y el calendario al final.
+// Va compacto para caber en pantallas de portátil; la hora está arriba para que siempre se vea.
 // Sin fecha no hay hora: si se pone hora sin fecha, la fecha pasa a ser hoy.
 // El desplegable se abre hacia abajo si cabe y, si no, hacia arriba.
 export default function DatePicker({
@@ -138,29 +139,72 @@ export default function DatePicker({
             up ? "bottom-full mb-2" : "top-full mt-2"
           }`}
         >
-          <ul className="flex flex-col border-b border-line pb-2">
+          {/* Accesos rápidos, uno debajo del otro (filas bajas para que quepa en portátil) */}
+          <ul className="flex flex-col">
             {quick.map((q) => (
               <li key={q.label}>
                 <button
                   type="button"
                   onClick={() => pick(q.value)}
-                  className={`flex min-h-11 w-full items-center justify-between rounded-lg px-3 text-left text-[15px] font-medium hover:bg-track ${
-                    value === q.value ? "text-accent-ink bg-accent-soft font-bold" : ""
+                  aria-pressed={value === q.value}
+                  className={`flex h-9 w-full items-center justify-between rounded-lg px-3 text-left text-[15px] font-medium hover:bg-track ${
+                    value === q.value ? "bg-accent-soft font-bold text-accent-ink" : ""
                   }`}
                 >
                   {q.label}
-                  <span className="text-sm text-muted">{q.hint}</span>
+                  <span className="text-sm font-normal text-muted">{q.hint}</span>
                 </button>
               </li>
             ))}
           </ul>
 
-          <div className="flex items-center justify-between pt-2">
+          {/* Hora: arriba del calendario para que se vea sin tener que bajar */}
+          <div className="border-b border-line pb-1.5">
+            {time || addingTime ? (
+              <div className="flex items-center gap-2">
+                <label htmlFor="due-time" className="flex items-center gap-2 pl-3 text-sm font-semibold text-ink-soft">
+                  <ClockIcon size={16} />
+                  Hora
+                </label>
+                <input
+                  id="due-time"
+                  type="time"
+                  autoFocus={!time}
+                  value={time ?? ""}
+                  onChange={(e) => setTime(e.target.value || undefined)}
+                  className={`${fieldClass} min-h-9 flex-1 py-1`}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTime(undefined);
+                    setAddingTime(false);
+                  }}
+                  aria-label="Quitar hora"
+                  title="Quitar hora"
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted hover:bg-track hover:text-ink"
+                >
+                  <CloseIcon size={14} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAddingTime(true)}
+                className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-[15px] font-medium text-ink-soft hover:bg-track"
+              >
+                <ClockIcon size={16} />
+                Añadir hora
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between pt-1">
             <button
               type="button"
               onClick={() => shiftMonth(-1)}
               aria-label="Mes anterior"
-              className="grid h-10 w-10 place-items-center rounded-lg text-ink-soft hover:bg-track"
+              className="grid h-9 w-9 place-items-center rounded-lg text-ink-soft hover:bg-track"
             >
               <span className="rotate-180">
                 <ChevronIcon size={16} />
@@ -171,20 +215,21 @@ export default function DatePicker({
               type="button"
               onClick={() => shiftMonth(1)}
               aria-label="Mes siguiente"
-              className="grid h-10 w-10 place-items-center rounded-lg text-ink-soft hover:bg-track"
+              className="grid h-9 w-9 place-items-center rounded-lg text-ink-soft hover:bg-track"
             >
               <ChevronIcon size={16} />
             </button>
           </div>
 
-          <div className="grid grid-cols-7 text-center text-xs font-semibold text-muted" aria-hidden="true">
+          <div className="grid grid-cols-7 text-center text-[11px] font-semibold text-muted" aria-hidden="true">
             {WEEKDAYS.map((d) => (
-              <span key={d} className="py-1">
+              <span key={d} className="pb-0.5">
                 {d}
               </span>
             ))}
           </div>
-          <div className="grid grid-cols-7">
+          {/* Días: algo más grandes en móvil (dedo), más compactos con ratón */}
+          <div className="grid grid-cols-7 gap-y-0.5 md:gap-y-0">
             {cells.map((d, i) =>
               d ? (
                 <button
@@ -193,7 +238,7 @@ export default function DatePicker({
                   onClick={() => pick(d)}
                   aria-label={new Date(d + "T00:00").toLocaleDateString("es-ES", { dateStyle: "full" })}
                   aria-pressed={d === value}
-                  className={`mx-auto grid h-10 w-10 place-items-center rounded-full text-sm ${
+                  className={`mx-auto grid h-9 w-9 place-items-center rounded-full text-sm md:h-7 md:w-8 ${
                     d === value
                       ? "bg-accent font-bold text-white"
                       : d === today
@@ -208,46 +253,6 @@ export default function DatePicker({
               ) : (
                 <span key={`e${i}`} />
               ),
-            )}
-          </div>
-
-          <div className="mt-2 border-t border-line pt-2">
-            {time || addingTime ? (
-              <div className="flex items-center gap-2">
-                <label htmlFor="due-time" className="flex items-center gap-2 pl-3 text-sm font-semibold text-ink-soft">
-                  <ClockIcon size={16} />
-                  Hora
-                </label>
-                <input
-                  id="due-time"
-                  type="time"
-                  autoFocus={!time}
-                  value={time ?? ""}
-                  onChange={(e) => setTime(e.target.value || undefined)}
-                  className={`${fieldClass} flex-1`}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTime(undefined);
-                    setAddingTime(false);
-                  }}
-                  aria-label="Quitar hora"
-                  title="Quitar hora"
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-muted hover:bg-track hover:text-ink"
-                >
-                  <CloseIcon size={14} />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setAddingTime(true)}
-                className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-[15px] font-medium text-ink-soft hover:bg-track"
-              >
-                <ClockIcon size={16} />
-                Añadir hora
-              </button>
             )}
           </div>
         </div>

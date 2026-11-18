@@ -147,6 +147,23 @@ export function loadLegacyTasks(): Task[] {
   }
 }
 
+// Preferencia de ocultar las tareas completadas en la lista.
+const HIDE_DONE_KEY = "donet.hideDone.v1";
+
+export function loadHideDone(): boolean {
+  try {
+    return localStorage.getItem(HIDE_DONE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function saveHideDone(hide: boolean) {
+  try {
+    localStorage.setItem(HIDE_DONE_KEY, hide ? "1" : "0");
+  } catch {}
+}
+
 const SPACE_KEY = "donet.space.v1";
 
 export function loadSpace(): Space {

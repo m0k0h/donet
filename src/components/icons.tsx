@@ -151,3 +151,32 @@ export const CommentIcon = ({ size }: P) => (
     <path d="M4 5h16v11H9l-5 4z" />
   </Icon>
 );
+
+export const EyeIcon = ({ size, off }: P & { off?: boolean }) => (
+  <Icon size={size}>
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+    <circle cx="12" cy="12" r="3" />
+    {off && <path d="M4 4l16 16" />}
+  </Icon>
+);
+
+// Círculo que se va rellenando como un quesito según el progreso (0 a 1).
+export const ProgressPie = ({ size = 13, value }: P & { value: number }) => {
+  const r = 3.5;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <circle
+        cx="8"
+        cy="8"
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={r * 2}
+        strokeDasharray={`${c * Math.min(Math.max(value, 0), 1)} ${c}`}
+        transform="rotate(-90 8 8)"
+      />
+    </svg>
+  );
+};

@@ -31,10 +31,26 @@ jobs:
         # entrar a Settings → Pages a mano.
         with:
           enablement: true
+      # Las claves de Supabase van en los secretos del repositorio (Settings →
+      # Secrets and variables → Actions). Sin ellas no se publica: la web solo
+      # mostraría «Falta configurar Supabase».
+      - name: Comprobar claves de Supabase
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" ]; then
+            echo "::error::Faltan los secretos NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
+            exit 1
+          fi
       - run: npm run build
         env:
           # "/donet" en m0k0h.github.io/donet; vacío si hay dominio propio.
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          # La clave publicable está pensada para ir en el navegador; los datos
+          # los protegen las políticas de Supabase (RLS).
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: out

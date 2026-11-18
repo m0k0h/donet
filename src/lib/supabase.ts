@@ -1,5 +1,5 @@
 import { createBrowserClient } from "@supabase/ssr";
-import type { Comment, Priority, Project, Space, Task } from "./tasks";
+import type { Comment, Label, Priority, Project, Space, Task, TaskLabel } from "./tasks";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -188,4 +188,54 @@ export async function insertComment(c: Comment) {
 export async function deleteComment(id: string) {
   const { error } = await supabase!.from("task_comments").delete().eq("id", id);
   if (error) throw error;
+}
+
+type LabelRow = { id: string; space: Space; name: string; color: string; created_at: string };
+
+export async function fetchLabels(): Promise<Label[]> {
+  const { data, error } = await supabase!.from("labels").select("id, space, name, color, created_at").order("created_at");
+  if (error) throw error;
+  return (data as LabelRow[]).map((r) => ({
+    id: r.id,
+    space: r.space,
+    name: r.name,
+    color: r.color,
+    createdAt: Date.parse(r.created_at),
+  }));
+}
+
+export async function insertLabels(labels: Label[]) {
+  if (!labels.length) return;
+  const { error } = await supabase!.from("labels").insert(
+    labels.map((l) => ({ id: l.id, space: l.space, name: l.name, color: l.color, created_at: new Date(l.createdAt).toISOString() })),
+  );
+  if (error) throw error;
+}
+
+export async function updateLabel(id: string, c: Pick<Label, "name" | "color">) {
+  const { error } = await supabase!.from("labels").update({ name: c.name, color: c.color }).eq("id", id);
+  if (error) throw error;
+}
+
+// Borra la etiqueta; la base de datos la quita también de las tareas.
+export async function deleteLabel(id: string) {
+  const { error } = await supabase!.from("labels").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function fetchTaskLabels(): Promise<TaskLabel[]> {
+  const { data, error } = await supabase!.from("task_labels").select("task_id, label_id");
+  if (error) throw error;
+  return (data as { task_id: string; label_id: string }[]).map((r) => ({ taskId: r.task_id, labelId: r.label_id }));
+}
+
+// Deja la tarea exactamente con estas etiquetas.
+export async function setTaskLabels(taskId: string, labelIds: string[]) {
+  const { error } = await supabase!.from("task_labels").delete().eq("task_id", taskId);
+  if (error) throw error;
+  if (!labelIds.length) return;
+  const { error: insertError } = await supabase!
+    .from("task_labels")
+    .insert(labelIds.map((labelId) => ({ task_id: taskId, label_id: labelId })));
+  if (insertError) throw insertError;
 }

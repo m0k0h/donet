@@ -15,31 +15,42 @@ import {
   localTasksUploaded,
   markLocalTasksUploaded,
   projectHex,
+  sameName,
   saveSpace,
+  sortLabels,
   sortTasks,
   spacePath,
   tasksIn,
   todayISO,
+  typedLabels,
   type Comment,
+  type Label,
   type Priority,
   type Project,
   type Selection,
   type Space,
   type Task,
+  type TaskLabel,
 } from "@/lib/tasks";
 import {
   deleteComment,
+  deleteLabel,
   deleteProject,
   deleteTask,
   fetchComments,
+  fetchLabels,
   fetchProjects,
+  fetchTaskLabels,
   fetchTasks,
   insertComment,
+  insertLabels,
   insertProject,
   insertTasks,
   setHideDoneSubtasks,
+  setTaskLabels,
   setTasksDone,
   supabase,
+  updateLabel,
   updateProject,
   updateTask,
 } from "@/lib/supabase";
@@ -50,6 +61,8 @@ import ConfirmDialog from "./ConfirmDialog";
 import { DetectedDateChip, useDetectedDate } from "./DetectedDate";
 import { EmptyFilter } from "./EmptyFilter";
 import Dialog from "./Dialog";
+import LabelDialog from "./LabelDialog";
+import { LabelList, LabelTag, TypedLabels } from "./Labels";
 import Logo from "./Logo";
 import PageHeader from "./PageHeader";
 import ProjectDialog from "./ProjectDialog";
@@ -74,6 +87,7 @@ import {
   SpaceIcon,
   SubtaskIcon,
   SwapIcon,
+  TagIcon,
   TrashIcon,
   ViewIcon,
 } from "./icons";
@@ -153,9 +167,9 @@ export default function TaskApp({ space }: { space: Space }) {
 
 const INBOX: Selection = { kind: "view", view: "inbox" };
 
-// Tareas madre de una tarea, de la más cercana hacia arriba (con `self`, empezando por ella).
-function ancestorIds(all: Task[], id: string, self = false): string[] {
-  const out: string[] = self ? [id] : [];
+// Tareas madre de una tarea, de la más cercana hacia arriba.
+function ancestorIds(all: Task[], id: string): string[] {
+  const out: string[] = [];
   for (let t = all.find((x) => x.id === id); t?.parentId; t = all.find((x) => x.id === t!.parentId)) out.push(t.parentId);
   return out;
 }
@@ -169,6 +183,10 @@ function Tasks({ space }: { space: Space }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [labels, setLabels] = useState<Label[]>([]);
+  const [taskLabels, setTaskLabelLinks] = useState<TaskLabel[]>([]);
+  // Nueva etiqueta o edición de una existente.
+  const [labelDialog, setLabelDialog] = useState<{ label?: Label } | null>(null);
   // Tarea cuyos comentarios están abiertos.
   const [commentsTaskId, setCommentsTaskId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -220,6 +238,8 @@ function Tasks({ space }: { space: Space }) {
       setTasks([]);
       setProjects([]);
       setComments([]);
+      setLabels([]);
+      setTaskLabelLinks([]);
       setLoaded(false);
       return;
     }
@@ -238,6 +258,14 @@ function Tasks({ space }: { space: Space }) {
         // Los comentarios van aparte: si la tabla aún no existe, las tareas se ven igual.
         fetchComments()
           .then((c) => !cancelled && setComments(c))
+          .catch(() => {});
+        // Las etiquetas también: sin sus tablas, la app funciona sin ellas.
+        Promise.all([fetchLabels(), fetchTaskLabels()])
+          .then(([l, links]) => {
+            if (cancelled) return;
+            setLabels(l);
+            setTaskLabelLinks(links);
+          })
           .catch(() => {});
       } catch {
         if (!cancelled) setSyncError("No se han podido cargar las tareas. Comprueba la conexión.");
@@ -258,6 +286,9 @@ function Tasks({ space }: { space: Space }) {
         setTasks(remoteTasks);
         setProjects(remoteProjects);
         setComments(await fetchComments());
+        const [l, links] = await Promise.all([fetchLabels(), fetchTaskLabels()]);
+        setLabels(l);
+        setTaskLabelLinks(links);
       } catch {}
     });
   }
@@ -267,11 +298,21 @@ function Tasks({ space }: { space: Space }) {
   const projectById = (id?: string) => projects.find((p) => p.id === id);
 
   // Si el proyecto elegido no es de esta sección (o ya no existe), se muestra Entrada.
-  const sel: Selection =
-    selection.kind === "project" && projectById(selection.id)?.space !== space ? INBOX : selection;
-  const project = sel.kind === "project" ? projectById(sel.id) : undefined;
+  const labelById = (id: string) => labels.find((l) => l.id === id);
+  const spaceLabels = sortLabels(labels.filter((l) => l.space === space));
+  const labelsOf = (taskId: string) =>
+    sortLabels(taskLabels.filter((x) => x.taskId === taskId).flatMap((x) => labelById(x.labelId) ?? []));
 
-  const list = tasksIn(tasks, space, sel);
+  // Si el proyecto o la etiqueta elegidos no son de esta sección (o ya no existen), se muestra Entrada.
+  const sel: Selection =
+    (selection.kind === "project" && projectById(selection.id)?.space !== space) ||
+    (selection.kind === "label" && labelById(selection.id)?.space !== space)
+      ? INBOX
+      : selection;
+  const project = sel.kind === "project" ? projectById(sel.id) : undefined;
+  const label = sel.kind === "label" ? labelById(sel.id) : undefined;
+
+  const list = tasksIn(tasks, space, sel, taskLabels);
   const doneView = sel.kind === "done";
   // Lo completado se va de las listas (salvo un momento, recién completado) y vive en Completadas.
   const showInList = (t: Task) => !t.done || justDone.has(t.id);
@@ -292,27 +333,53 @@ function Tasks({ space }: { space: Space }) {
   // Completadas de esta lista que ya no se ven, para el enlace a Completadas.
   const doneHere = doneView ? 0 : list.filter((t) => isRoot(t) && t.done && !justDone.has(t.id)).length;
 
-  const pendingIn = (s: Selection) => tasksIn(tasks, space, s).filter((t) => !t.done).length;
+  const pendingIn = (s: Selection) => tasksIn(tasks, space, s, taskLabels).filter((t) => !t.done).length;
   const count = list.filter((t) => !t.done).length;
 
   // Ruta del proyecto (Casa › Cocina) para el subtítulo.
   const ancestors: Project[] = [];
   for (let p = projectById(project?.parentId); p; p = projectById(p.parentId)) ancestors.unshift(p);
 
-  // Hoy y Próximo son filtros: no se añaden tareas desde ahí. Solo desde Entrada o un proyecto.
-  const canAdd = !shopping && !doneView && !(sel.kind === "view" && (sel.view === "today" || sel.view === "upcoming"));
+  // Hoy, Próximo, las etiquetas y Completadas son filtros: no se añaden tareas desde ahí.
+  // Solo desde Entrada o un proyecto (y nunca con la Compra abierta).
+  const canAdd = !shopping && isTree(sel);
 
   // Dónde caen las tareas nuevas: en el proyecto abierto o, si no, en Entrada.
   const destProjectId = project?.id;
 
-  // Fecha escrita en el propio texto («mañana», «el viernes»…).
-  const quickDate = useDetectedDate(title);
+  // Etiquetas escritas con @ y fecha escrita en el propio texto («mañana», «el viernes»…).
+  const quickTyped = typedLabels(title);
+  const quickDate = useDetectedDate(quickTyped.text);
 
   function select(s: Selection) {
     setSelection(s);
     setShopping(false);
     setProjectsSheet(false);
     setComposerOpen(false);
+  }
+
+  // Pasa nombres de etiqueta a ids, creando las que aún no existan en la sección.
+  function resolveLabels(s: Space, names: string[]) {
+    const created: Label[] = [];
+    const ids = names.map((name) => {
+      const existing = labels.find((l) => l.space === s && sameName(l.name, name)) ?? created.find((l) => sameName(l.name, name));
+      if (existing) return existing.id;
+      const l: Label = { id: crypto.randomUUID(), space: s, name, color: "gray", createdAt: Date.now() };
+      created.push(l);
+      return l.id;
+    });
+    return { ids: [...new Set(ids)], created };
+  }
+
+  // Deja la tarea con esas etiquetas. Devuelve la operación para guardarla
+  // (después de crear la tarea, si es nueva).
+  function applyLabels(taskId: string, s: Space, names: string[]) {
+    const { ids, created } = resolveLabels(s, names);
+    const before = taskLabels.filter((x) => x.taskId === taskId).map((x) => x.labelId);
+    if (!created.length && ids.length === before.length && ids.every((id) => before.includes(id))) return null;
+    if (created.length) setLabels((prev) => [...prev, ...created]);
+    setTaskLabelLinks((prev) => [...prev.filter((x) => x.taskId !== taskId), ...ids.map((labelId) => ({ taskId, labelId }))]);
+    return () => insertLabels(created).then(() => setTaskLabels(taskId, ids));
   }
 
   function createTask(d: TaskDraft & { parentId?: string }) {
@@ -330,16 +397,17 @@ function Tasks({ space }: { space: Space }) {
       createdAt: Date.now(),
     };
     setTasks((prev) => [...prev, task]);
-    sync(insertTasks([task]));
+    const saveLabels = applyLabels(task.id, task.space, d.labels);
+    sync(insertTasks([task]).then(() => saveLabels?.()));
   }
 
   // Modo rápido: solo el texto.
   function quickAdd(e: React.FormEvent) {
     e.preventDefault();
-    const t = title.trim();
+    const t = quickTyped.text.trim();
     if (!t) return;
     const d = quickDate.detected;
-    createTask({ space, projectId: destProjectId, title: d?.title ?? t, due: d?.due, dueTime: d?.time, priority: 4 });
+    createTask({ space, projectId: destProjectId, title: d?.title ?? t, due: d?.due, dueTime: d?.time, priority: 4, labels: quickTyped.names });
     setTitle("");
     quickDate.reset();
   }
@@ -350,26 +418,28 @@ function Tasks({ space }: { space: Space }) {
     setTaskDialog({
       space,
       projectId: destProjectId,
-      title: d?.title ?? title.trim(),
+      title: d?.title ?? quickTyped.text.trim(),
       due: d?.due,
       dueTime: d?.time,
       priority: 4,
+      labels: quickTyped.names,
     });
     setTitle("");
     quickDate.reset();
     setComposerOpen(false);
   }
 
-  function addSubtask(parent: Task, text: string, due?: string, dueTime?: string) {
-    // Una subtarea nueva deja pendiente a su madre (y a las de más arriba) si estaba completada.
-    reopen(ancestorIds(tasks, parent.id, true));
-    createTask({ space: parent.space, projectId: parent.projectId, parentId: parent.id, title: text, due, dueTime, priority: 4 });
+  // A una tarea completada no se le añaden subtareas.
+  function addSubtask(parent: Task, text: string, due?: string, dueTime?: string, labelNames: string[] = []) {
+    if (parent.done) return;
+    createTask({ space: parent.space, projectId: parent.projectId, parentId: parent.id, title: text, due, dueTime, priority: 4, labels: labelNames });
   }
 
   // Guarda los cambios de una tarea. Si cambia de sección o proyecto, sus subtareas van con ella.
-  function saveTask(task: Task, d: TaskDraft) {
+  function saveTask(task: Task, { labels: labelNames, ...d }: TaskDraft) {
     const descendants = descendantIds(tasks, task.id);
     const sub = new Set(descendants);
+    const saveLabels = applyLabels(task.id, d.space, labelNames);
     setTasks((prev) =>
       prev.map((t) =>
         t.id === task.id
@@ -379,7 +449,34 @@ function Tasks({ space }: { space: Space }) {
             : t,
       ),
     );
-    sync(updateTask(task.id, d, descendants));
+    sync(updateTask(task.id, d, descendants).then(() => saveLabels?.()));
+  }
+
+  function createLabel(l: { name: string; color: string }) {
+    const created: Label = { id: crypto.randomUUID(), space, createdAt: Date.now(), ...l };
+    setLabels((prev) => [...prev, created]);
+    setSelection({ kind: "label", id: created.id });
+    sync(insertLabels([created]));
+  }
+
+  function saveLabel(label: Label, l: { name: string; color: string }) {
+    setLabels((prev) => prev.map((x) => (x.id === label.id ? { ...x, ...l } : x)));
+    sync(updateLabel(label.id, l));
+  }
+
+  // Borrar una etiqueta la quita de sus tareas; las tareas no se tocan.
+  function askRemoveLabel(label: Label) {
+    const n = taskLabels.filter((x) => x.labelId === label.id).length;
+    setConfirm({
+      title: "Borrar etiqueta",
+      message: `¿Borrar «${label.name}»?${n ? ` Se quitará de ${n === 1 ? "1 tarea, que no se borra" : `${n} tareas, que no se borran`}.` : ""} No se puede deshacer.`,
+      onConfirm: () => {
+        setLabels((prev) => prev.filter((x) => x.id !== label.id));
+        setTaskLabelLinks((prev) => prev.filter((x) => x.labelId !== label.id));
+        setSelection(INBOX);
+        sync(deleteLabel(label.id));
+      },
+    });
   }
 
   function saveProject(project: Project, p: { name: string; color: string; parentId?: string }) {
@@ -470,6 +567,7 @@ function Tasks({ space }: { space: Space }) {
     const gone = new Set([id, ...descendantIds(tasks, id)]);
     setTasks((prev) => prev.filter((t) => !gone.has(t.id)));
     setComments((prev) => prev.filter((c) => !gone.has(c.taskId)));
+    setTaskLabelLinks((prev) => prev.filter((x) => !gone.has(x.taskId)));
     sync(deleteTask(id));
   }
 
@@ -519,11 +617,26 @@ function Tasks({ space }: { space: Space }) {
     />
   );
 
+  const labelList = (
+    <LabelList
+      labels={spaceLabels}
+      selectedId={shopping ? undefined : label?.id}
+      pendingOf={(id) => pendingIn({ kind: "label", id })}
+      onSelect={(id) => select({ kind: "label", id })}
+      onAdd={() => {
+        setProjectsSheet(false);
+        setLabelDialog({});
+      }}
+    />
+  );
+
   const heading = project
     ? project.name
-    : doneView
-      ? "Completadas"
-      : VIEWS.find((v) => sel.kind === "view" && v.id === sel.view)!.label;
+    : label
+      ? label.name
+      : doneView
+        ? "Completadas"
+        : VIEWS.find((v) => sel.kind === "view" && v.id === sel.view)!.label;
   const weekDone = doneView ? doneThisWeek(list) : 0;
 
   return (
@@ -574,6 +687,7 @@ function Tasks({ space }: { space: Space }) {
           }}
         />
         {projectTree}
+        {labelList}
         {/* Zona de ajustes, abajo del todo */}
         <div className="mt-auto flex items-center justify-between">
           {signOut}
@@ -606,12 +720,18 @@ function Tasks({ space }: { space: Space }) {
             <PageHeader
               title={heading}
               leading={
-                project && (
+                project ? (
                   <span className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ background: projectHex(project.color) }} />
+                ) : (
+                  label && (
+                    <span className="shrink-0" style={{ color: projectHex(label.color) }}>
+                      <TagIcon size={26} />
+                    </span>
+                  )
                 )
               }
               actions={
-                project && (
+                (project && (
                   <button
                     onClick={() => setProjectDialog({ project })}
                     aria-label={`Editar proyecto ${project.name}`}
@@ -620,9 +740,19 @@ function Tasks({ space }: { space: Space }) {
                   >
                     <PencilIcon size={20} />
                   </button>
-                )
+                )) ||
+                (label && (
+                  <button
+                    onClick={() => setLabelDialog({ label })}
+                    aria-label={`Editar etiqueta ${label.name}`}
+                    title="Editar etiqueta"
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink"
+                  >
+                    <PencilIcon size={20} />
+                  </button>
+                ))
               }
-              context={[spaceLabel, ...ancestors.map((a) => a.name)].join(" › ")}
+              context={[spaceLabel, ...(label ? ["Etiquetas"] : []), ...ancestors.map((a) => a.name)].join(" › ")}
               count={
                 doneView
                   ? { label: weekDone === 0 ? "Nada esta semana" : `${weekDone} esta semana`, empty: weekDone === 0 }
@@ -652,26 +782,29 @@ function Tasks({ space }: { space: Space }) {
                     type="button"
                     onClick={openTaskDialog}
                     aria-label="Más opciones"
-                    title="Más opciones: descripción, fecha, prioridad, proyecto…"
+                    title="Más opciones: descripción, fecha, prioridad, proyecto, etiquetas…"
                     className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink"
                   >
                     <SlidersIcon />
                   </button>
                   <button
                     type="submit"
-                    disabled={!title.trim()}
+                    disabled={!quickTyped.text.trim()}
                     className="min-h-11 shrink-0 rounded-lg bg-accent px-4 text-sm font-bold text-white disabled:opacity-40"
                   >
                     Añadir
                   </button>
                 </div>
                 {quickDate.detected && <DetectedDateChip detected={quickDate.detected} onIgnore={quickDate.ignore} />}
+                <TypedLabels names={quickTyped.names} labels={spaceLabels} />
               </form>
             )}
 
             {loaded && !doneView && roots.length === 0 && (
               sel.kind === "view" && sel.view !== "inbox" ? (
                 <EmptyFilter view={sel.view} />
+              ) : label ? (
+                <p className="py-16 text-center text-muted">Ninguna tarea pendiente lleva esta etiqueta.</p>
               ) : (
                 <p className="py-16 text-center text-muted">Nada por aquí. ¡Te has ganado un donete!</p>
               )
@@ -707,6 +840,8 @@ function Tasks({ space }: { space: Space }) {
                         commentCount={commentCount}
                         onComments={(t) => setCommentsTaskId(t.id)}
                         progressOf={progressOf}
+                        labelsOf={labelsOf}
+                        spaceLabels={spaceLabels}
                       />
                     ))}
                   </ul>
@@ -736,6 +871,8 @@ function Tasks({ space }: { space: Space }) {
                     onComments={(t) => setCommentsTaskId(t.id)}
                     progressOf={progressOf}
                     onToggleHideDone={toggleHideDoneSubtasks}
+                    labelsOf={labelsOf}
+                    spaceLabels={spaceLabels}
                   />
                 ))}
               </ul>
@@ -812,9 +949,9 @@ function Tasks({ space }: { space: Space }) {
           </div>
           <button
             onClick={() => setProjectsSheet(true)}
-            aria-current={project && !shopping ? "page" : undefined}
+            aria-current={(project || label) && !shopping ? "page" : undefined}
             className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
-              project && !shopping ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
+              (project || label) && !shopping ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
             }`}
           >
             <FolderIcon size={22} />
@@ -848,8 +985,9 @@ function Tasks({ space }: { space: Space }) {
 
       {projectsSheet && (
         <Dialog title={`Proyectos · ${spaceLabel}`} onClose={() => setProjectsSheet(false)}>
-          <div className="max-h-[60dvh] overflow-y-auto">
+          <div className="flex max-h-[60dvh] flex-col gap-4 overflow-y-auto">
             {projectTree}
+            {labelList}
           </div>
         </Dialog>
       )}
@@ -866,10 +1004,21 @@ function Tasks({ space }: { space: Space }) {
         />
       )}
 
+      {labelDialog && (
+        <LabelDialog
+          labels={spaceLabels}
+          label={labelDialog.label}
+          onSave={(l) => (labelDialog.label ? saveLabel(labelDialog.label, l) : createLabel(l))}
+          onDelete={labelDialog.label && (() => askRemoveLabel(labelDialog.label!))}
+          onClose={() => setLabelDialog(null)}
+        />
+      )}
+
       {taskDialog && (
         <TaskDialog
           initial={taskDialog}
           projects={projects}
+          labels={spaceLabels}
           onSave={createTask}
           onClose={() => setTaskDialog(null)}
         />
@@ -906,8 +1055,10 @@ function Tasks({ space }: { space: Space }) {
             due: editingTask.due,
             dueTime: editingTask.dueTime,
             priority: editingTask.priority,
+            labels: labelsOf(editingTask.id).map((l) => l.name),
           }}
           projects={projects}
+          labels={sortLabels(labels.filter((l) => l.space === editingTask.space))}
           onSave={(d) => saveTask(editingTask, d)}
           onClose={() => setEditingTask(null)}
         />
@@ -932,6 +1083,8 @@ function TaskRow({
   onComments,
   progressOf,
   onToggleHideDone,
+  labelsOf,
+  spaceLabels,
 }: {
   task: Task;
   depth: number;
@@ -944,12 +1097,14 @@ function TaskRow({
   onToggle: (t: Task) => void;
   onEdit: (t: Task) => void;
   onRemove: (id: string) => void;
-  onAddSubtask: (parent: Task, title: string, due?: string, dueTime?: string) => void;
+  onAddSubtask: (parent: Task, title: string, due?: string, dueTime?: string, labels?: string[]) => void;
   commentCount: (taskId: string) => number;
   onComments: (t: Task) => void;
   progressOf: (id: string) => { done: number; total: number };
   // Solo en árbol: ocultar o mostrar las subtareas completadas de esta tarea.
   onToggleHideDone?: (t: Task) => void;
+  labelsOf: (taskId: string) => Label[];
+  spaceLabels: Label[];
 }) {
   const [adding, setAdding] = useState(false);
   const subForm = useRef<HTMLFormElement>(null);
@@ -971,16 +1126,17 @@ function TaskRow({
     };
   }, [adding]);
   const [sub, setSub] = useState("");
-  const subDate = useDetectedDate(sub);
+  const subTyped = typedLabels(sub);
+  const subDate = useDetectedDate(subTyped.text);
   const overdue = !t.done && isOverdue(t, today);
   const children = tree ? childrenOf(t.id) : [];
   const indent = { paddingLeft: depth * 28 };
 
   function submitSub(e: React.FormEvent) {
     e.preventDefault();
-    if (!sub.trim()) return;
+    if (!subTyped.text.trim()) return;
     const d = subDate.detected;
-    onAddSubtask(t, d?.title ?? sub.trim(), d?.due, d?.time);
+    onAddSubtask(t, d?.title ?? subTyped.text.trim(), d?.due, d?.time, subTyped.names);
     setSub("");
     subDate.reset();
   }
@@ -989,11 +1145,12 @@ function TaskRow({
   const onlyTime = showDue && hideToday && t.due === today && !overdue;
   const showPriority = !t.done && t.priority < 4;
   const nComments = commentCount(t.id);
+  const taskLabels = labelsOf(t.id);
   const progress = progressOf(t.id);
   // No se puede completar mientras le queden subtareas pendientes.
   const blocked = !t.done && progress.done < progress.total;
   const showMeta =
-    (showDue && (!onlyTime || !!t.dueTime)) || showPriority || progress.total > 0 || nComments > 0 || !!context;
+    (showDue && (!onlyTime || !!t.dueTime)) || showPriority || progress.total > 0 || nComments > 0 || taskLabels.length > 0 || !!context;
 
   return (
     <li className="flex flex-col">
@@ -1076,6 +1233,9 @@ function TaskRow({
                   {nComments}
                 </button>
               )}
+              {taskLabels.map((l) => (
+                <LabelTag key={l.id} label={l} />
+              ))}
               {context && (
                 <span className="ml-auto inline-flex min-w-0 max-w-full items-center gap-1.5 text-muted">
                   {context.parent && (
@@ -1104,7 +1264,8 @@ function TaskRow({
             </div>
           )}
         </div>
-        {tree && (
+        {/* Solo las tareas pendientes admiten subtareas nuevas. */}
+        {tree && !t.done && (
           <button
             ref={subButton}
             onClick={() => setAdding((a) => !a)}
@@ -1151,6 +1312,8 @@ function TaskRow({
               onComments={onComments}
               progressOf={progressOf}
               onToggleHideDone={onToggleHideDone}
+              labelsOf={labelsOf}
+              spaceLabels={spaceLabels}
             />
           ))}
         </ul>
@@ -1171,7 +1334,7 @@ function TaskRow({
         </div>
       )}
 
-      {adding && (
+      {adding && !t.done && (
         <form
           onSubmit={submitSub}
           ref={subForm}
@@ -1189,13 +1352,14 @@ function TaskRow({
           />
           <button
             type="submit"
-            disabled={!sub.trim()}
+            disabled={!subTyped.text.trim()}
             className="min-h-9 shrink-0 rounded-lg bg-accent px-4 text-sm font-bold text-white disabled:opacity-40"
           >
             Añadir
           </button>
           </div>
           {subDate.detected && <DetectedDateChip detected={subDate.detected} onIgnore={subDate.ignore} />}
+          <TypedLabels names={subTyped.names} labels={spaceLabels} />
         </form>
       )}
     </li>

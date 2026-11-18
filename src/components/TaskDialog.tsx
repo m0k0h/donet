@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { flattenProjects, type Priority, type Project, type Space } from "@/lib/tasks";
+import { flattenProjects, sameName, typedLabels, type Label, type Priority, type Project, type Space } from "@/lib/tasks";
 import DatePicker from "./DatePicker";
 import { DetectedDateChip, useDetectedDate } from "./DetectedDate";
 import Dialog, { Select, fieldClass, labelClass } from "./Dialog";
+import { LabelPicker, TypedLabels } from "./Labels";
 
 export type TaskDraft = {
   space: Space;
@@ -14,6 +15,7 @@ export type TaskDraft = {
   due?: string;
   dueTime?: string;
   priority: Priority;
+  labels: string[]; // nombres; las que no existan se crean al guardar
 };
 
 // Formulario completo de una tarea: sirve para crearla y para editarla después.
@@ -22,6 +24,7 @@ export type TaskDraft = {
 export default function TaskDialog({
   initial,
   projects,
+  labels,
   editing,
   subtask,
   onSave,
@@ -29,6 +32,7 @@ export default function TaskDialog({
 }: {
   initial: TaskDraft;
   projects: Project[];
+  labels: Label[]; // las de la sección
   editing?: boolean;
   subtask?: boolean;
   onSave: (t: TaskDraft) => void;
@@ -38,22 +42,26 @@ export default function TaskDialog({
   const set = (patch: Partial<TaskDraft>) => setD((prev) => ({ ...prev, ...patch }));
   // La fecha escrita en el texto solo se busca si el texto ha cambiado: al editar una tarea
   // guardada como «Martes de carnaval» no se vuelve a proponer.
-  const { detected, ignore } = useDetectedDate(d.title, d.title !== initial.title);
+  // Las etiquetas escritas con @ salen del texto y se suman a las elegidas.
+  const typed = typedLabels(d.title);
+  const { detected, ignore } = useDetectedDate(typed.text, d.title !== initial.title);
+  const allLabels = [...d.labels, ...typed.names.filter((n) => !d.labels.some((l) => sameName(l, n)))];
   const due = detected?.due ?? d.due;
   const dueTime = due ? (detected?.time ?? d.dueTime) : undefined;
 
   // Al tocar la fecha o la hora a mano, lo detectado en el texto se da por bueno
   // (sale del texto) y el cambio se aplica encima.
   function setWhen(patch: Pick<TaskDraft, "due" | "dueTime">) {
-    set({ ...(detected && { title: detected.title }), due, dueTime, ...patch });
+    set({ ...(detected && { title: detected.title, labels: allLabels }), due, dueTime, ...patch });
   }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!d.title.trim()) return;
+    if (!typed.text.trim()) return;
     onSave({
       ...d,
-      title: detected?.title ?? d.title.trim(),
+      title: detected?.title ?? typed.text.trim(),
+      labels: allLabels,
       description: d.description?.trim() || undefined,
       due: due || undefined,
       dueTime: dueTime || undefined,
@@ -70,6 +78,7 @@ export default function TaskDialog({
             <input value={d.title} onChange={(e) => set({ title: e.target.value })} className={fieldClass} />
           </label>
           {detected && <DetectedDateChip detected={detected} onIgnore={ignore} />}
+          <TypedLabels names={typed.names} labels={labels} />
         </div>
         <label className={labelClass}>
           Descripción
@@ -110,13 +119,22 @@ export default function TaskDialog({
           )}
         </div>
 
+        <div className={labelClass}>
+          <span aria-hidden="true">Etiquetas</span>
+          <LabelPicker
+            labels={labels}
+            value={d.labels}
+            onChange={(names) => set({ labels: names })}
+          />
+        </div>
+
         <div className="flex justify-end gap-2 pt-1">
           <button type="button" onClick={onClose} className="min-h-11 rounded-lg px-4 text-sm font-semibold text-ink-soft hover:bg-track">
             Cancelar
           </button>
           <button
             type="submit"
-            disabled={!d.title.trim()}
+            disabled={!typed.text.trim()}
             className="min-h-11 rounded-lg bg-accent px-5 text-sm font-bold text-white disabled:opacity-40"
           >
             {editing ? "Guardar" : "Añadir tarea"}

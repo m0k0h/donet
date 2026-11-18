@@ -34,7 +34,7 @@ export type Comment = {
   createdAt: number;
 };
 
-// Colores que se pueden dar a un proyecto. El valor guardado es la clave.
+// Colores que se pueden dar a un proyecto o a una etiqueta. El valor guardado es la clave.
 export const PROJECT_COLORS: { id: string; label: string; hex: string }[] = [
   { id: "gray", label: "Gris", hex: "#8b919c" },
   { id: "red", label: "Rojo", hex: "#dc2626" },
@@ -68,8 +68,39 @@ export const VIEWS: { id: View; label: string }[] = [
   { id: "upcoming", label: "Próximo" },
 ];
 
-// Lo que se está mirando: una de las vistas, un proyecto o el archivo de completadas.
-export type Selection = { kind: "view"; view: View } | { kind: "project"; id: string } | { kind: "done" };
+// Etiqueta: cada sección tiene las suyas. Usa los mismos colores que los proyectos.
+export type Label = {
+  id: string;
+  space: Space;
+  name: string;
+  color: string;
+  createdAt: number;
+};
+
+// Una etiqueta puesta en una tarea.
+export type TaskLabel = { taskId: string; labelId: string };
+
+export const sortLabels = (list: Label[]) => [...list].sort((a, b) => a.name.localeCompare(b.name, "es"));
+
+export const sameName = (a: string, b: string) => a.localeCompare(b, "es", { sensitivity: "accent" }) === 0;
+
+// Etiquetas escritas en el texto con @ («Comprar pan @casa @urgente»). Devuelve los nombres
+// (sin repetir) y el texto sin ellas.
+const TYPED_LABEL = /(^|\s)@([\p{L}\d][\p{L}\d_-]*)/gu;
+
+export function typedLabels(text: string): { names: string[]; text: string } {
+  const names: string[] = [];
+  for (const m of text.matchAll(TYPED_LABEL)) if (!names.some((n) => sameName(n, m[2]))) names.push(m[2]);
+  if (!names.length) return { names, text };
+  return { names, text: text.replace(TYPED_LABEL, "$1").replace(/\s+/g, " ").trim() };
+}
+
+// Lo que se está mirando: una de las vistas, un proyecto, una etiqueta o el archivo de completadas.
+export type Selection =
+  | { kind: "view"; view: View }
+  | { kind: "project"; id: string }
+  | { kind: "label"; id: string }
+  | { kind: "done" };
 
 export const todayISO = () => new Date().toLocaleDateString("sv-SE");
 
@@ -103,12 +134,16 @@ export const sortTasks = (list: Task[]) =>
   );
 
 // Tareas de la selección. Entrada y los proyectos devuelven todas las de ese cajón
-// (con sus subtareas, que se pintan anidadas); Hoy y Próximo, una lista plana por fecha.
-export function tasksIn(all: Task[], space: Space, sel: Selection): Task[] {
+// (con sus subtareas, que se pintan anidadas); Hoy, Próximo y las etiquetas, una lista plana.
+export function tasksIn(all: Task[], space: Space, sel: Selection, links: TaskLabel[] = []): Task[] {
   const today = todayISO();
   const tasks = all.filter((t) => t.space === space);
   if (sel.kind === "project") return tasks.filter((t) => t.projectId === sel.id);
   if (sel.kind === "done") return tasks.filter((t) => t.done);
+  if (sel.kind === "label") {
+    const ids = new Set(links.filter((l) => l.labelId === sel.id).map((l) => l.taskId));
+    return tasks.filter((t) => ids.has(t.id));
+  }
   if (sel.view === "inbox") return tasks.filter((t) => !t.projectId);
   if (sel.view === "today") return tasks.filter((t) => t.due && t.due <= today);
   return tasks.filter((t) => t.due && t.due > today);

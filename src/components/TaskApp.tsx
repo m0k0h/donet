@@ -127,9 +127,9 @@ export default function TaskApp({ space }: { space: Space }) {
 
 const INBOX: Selection = { kind: "view", view: "inbox" };
 
-// Tareas madre de una tarea, de la más cercana hacia arriba (con `self`, empezando por ella).
-function ancestorIds(all: Task[], id: string, self = false): string[] {
-  const out: string[] = self ? [id] : [];
+// Tareas madre de una tarea, de la más cercana hacia arriba.
+function ancestorIds(all: Task[], id: string): string[] {
+  const out: string[] = [];
   for (let t = all.find((x) => x.id === id); t?.parentId; t = all.find((x) => x.id === t!.parentId)) out.push(t.parentId);
   return out;
 }
@@ -317,9 +317,9 @@ function Tasks({ space }: { space: Space }) {
     setComposerOpen(false);
   }
 
+  // A una tarea completada no se le añaden subtareas.
   function addSubtask(parent: Task, text: string, due?: string, dueTime?: string) {
-    // Una subtarea nueva deja pendiente a su madre (y a las de más arriba) si estaba completada.
-    reopen(ancestorIds(tasks, parent.id, true));
+    if (parent.done) return;
     createTask({ space: parent.space, projectId: parent.projectId, parentId: parent.id, title: text, due, dueTime, priority: 4 });
   }
 
@@ -917,7 +917,8 @@ function TaskRow({
             </div>
           )}
         </div>
-        {tree && (
+        {/* Solo las tareas pendientes admiten subtareas nuevas. */}
+        {tree && !t.done && (
           <button
             ref={subButton}
             onClick={() => setAdding((a) => !a)}
@@ -968,7 +969,7 @@ function TaskRow({
         </ul>
       )}
 
-      {adding && (
+      {adding && !t.done && (
         <form
           onSubmit={submitSub}
           ref={subForm}

@@ -7,10 +7,13 @@ import { ChevronIcon, CloseIcon } from "./icons";
 // En móvil sale desde abajo; en escritorio, centrada.
 export default function Dialog({
   title,
+  badge,
   onClose,
   children,
 }: {
   title: string;
+  // Número junto al título (p. ej. cuántos comentarios hay).
+  badge?: number;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -36,7 +39,12 @@ export default function Dialog({
     >
       <div className="flex flex-col gap-4 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-xl font-extrabold">{title}</h2>
+          <h2 className="flex items-center gap-2 text-xl font-extrabold">
+            {title}
+            {badge !== undefined && (
+              <span className="rounded-full bg-track px-2 py-0.5 text-sm font-bold text-ink-soft">{badge}</span>
+            )}
+          </h2>
           <button
             type="button"
             onClick={onClose}

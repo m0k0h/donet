@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { Comment, Task } from "@/lib/tasks";
-import Dialog, { fieldClass } from "./Dialog";
+import Dialog from "./Dialog";
 import { TrashIcon } from "./icons";
 
 // «18 nov, 10:32»; si es de otro año, también el año.
@@ -34,6 +34,15 @@ export default function CommentsDialog({
   onClose: () => void;
 }) {
   const [body, setBody] = useState("");
+  const field = useRef<HTMLTextAreaElement>(null);
+
+  // El campo crece con el texto (hasta un tope) y vuelve a una línea al enviar.
+  useLayoutEffect(() => {
+    const el = field.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [body]);
 
   function submit(e?: React.FormEvent) {
     e?.preventDefault();
@@ -44,12 +53,10 @@ export default function CommentsDialog({
   }
 
   return (
-    <Dialog title="Comentarios" onClose={onClose}>
+    <Dialog title="Comentarios" badge={comments.length || undefined} onClose={onClose}>
       <p className="-mt-2 break-words text-sm text-muted">{task.title}</p>
 
-      {comments.length === 0 ? (
-        <p className="py-4 text-center text-sm text-muted">Todavía no hay comentarios.</p>
-      ) : (
+      {comments.length > 0 && (
         <ul className="flex max-h-[45dvh] flex-col gap-2 overflow-y-auto">
           {comments.map((c) => (
             <li key={c.id} className="group flex items-start gap-2 rounded-xl bg-sunk py-2.5 pl-3.5 pr-1">
@@ -71,8 +78,13 @@ export default function CommentsDialog({
         </ul>
       )}
 
-      <form onSubmit={submit} className="flex items-end gap-2">
+      {/* Campo tipo chat: el botón va dentro, abajo a la derecha, y el campo crece hacia arriba. */}
+      <form
+        onSubmit={submit}
+        className="flex items-end gap-2 rounded-xl bg-sunk p-1 pl-3.5 focus-within:ring-2 focus-within:ring-accent"
+      >
         <textarea
+          ref={field}
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => {
@@ -83,13 +95,13 @@ export default function CommentsDialog({
           }}
           placeholder="Escribe un comentario…"
           aria-label={`Nuevo comentario en ${task.title}`}
-          rows={2}
-          className={`${fieldClass} resize-none py-2.5`}
+          rows={1}
+          className="max-h-[30dvh] min-w-0 flex-1 resize-none bg-transparent py-2 text-base leading-6 text-ink outline-none placeholder:text-muted"
         />
         <button
           type="submit"
           disabled={!body.trim()}
-          className="min-h-11 shrink-0 rounded-lg bg-accent px-4 text-sm font-bold text-white disabled:opacity-40"
+          className="min-h-10 shrink-0 rounded-lg bg-accent px-4 text-sm font-bold text-white disabled:opacity-40"
         >
           Comentar
         </button>

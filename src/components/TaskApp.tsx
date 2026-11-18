@@ -806,7 +806,7 @@ function TaskRow({
   // No se puede completar mientras le queden subtareas pendientes.
   const blocked = !t.done && progress.done < progress.total;
   const showMeta =
-    t.done || (showDue && (!onlyTime || !!t.dueTime)) || showPriority || progress.total > 0 || nComments > 0 || !!context;
+    (showDue && (!onlyTime || !!t.dueTime)) || showPriority || progress.total > 0 || nComments > 0 || !!context;
 
   return (
     <li className="flex flex-col">
@@ -842,7 +842,6 @@ function TaskRow({
           {t.description && <Description text={t.description} />}
           {showMeta && (
             <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
-              {t.done && <span className="font-semibold text-green">Hecha</span>}
               {showDue &&
                 (onlyTime ? (
                   t.dueTime && (

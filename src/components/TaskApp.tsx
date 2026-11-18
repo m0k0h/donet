@@ -9,10 +9,12 @@ import {
   dueLabel,
   isOverdue,
   isTree,
+  loadHideDone,
   loadLegacyTasks,
   localTasksUploaded,
   markLocalTasksUploaded,
   projectHex,
+  saveHideDone,
   saveSpace,
   sortTasks,
   spacePath,
@@ -35,7 +37,7 @@ import {
   insertComment,
   insertProject,
   insertTasks,
-  setTaskDone,
+  setTasksDone,
   supabase,
   updateProject,
   updateTask,
@@ -57,10 +59,12 @@ import {
   CheckIcon,
   ClockIcon,
   CommentIcon,
+  EyeIcon,
   FlagIcon,
   FolderIcon,
   PencilIcon,
   PlusIcon,
+  ProgressPie,
   SlidersIcon,
   SpaceIcon,
   SubtaskIcon,
@@ -123,6 +127,13 @@ export default function TaskApp({ space }: { space: Space }) {
 
 const INBOX: Selection = { kind: "view", view: "inbox" };
 
+// Tareas madre de una tarea, de la más cercana hacia arriba (con `self`, empezando por ella).
+function ancestorIds(all: Task[], id: string, self = false): string[] {
+  const out: string[] = self ? [id] : [];
+  for (let t = all.find((x) => x.id === id); t?.parentId; t = all.find((x) => x.id === t!.parentId)) out.push(t.parentId);
+  return out;
+}
+
 // Todas las subtareas (a cualquier profundidad) de una tarea.
 function descendantIds(all: Task[], id: string): string[] {
   return all.filter((t) => t.parentId === id).flatMap((t) => [t.id, ...descendantIds(all, t.id)]);
@@ -148,6 +159,17 @@ function Tasks({ space }: { space: Space }) {
   // undefined = comprobando sesión, null = sin sesión.
   const [userId, setUserId] = useState<string | null | undefined>(undefined);
   const [syncError, setSyncError] = useState("");
+  const [hideDone, setHideDone] = useState(false);
+
+  // La preferencia se lee al montar (no en el render inicial, para no chocar con el servidor).
+  useEffect(() => setHideDone(loadHideDone()), []);
+
+  function toggleHideDone() {
+    setHideDone((h) => {
+      saveHideDone(!h);
+      return !h;
+    });
+  }
 
   // Recuerda la última sección abierta para volver a ella al entrar por la dirección principal.
   useEffect(() => saveSpace(space), [space]);
@@ -215,7 +237,14 @@ function Tasks({ space }: { space: Space }) {
     selection.kind === "project" && projectById(selection.id)?.space !== space ? INBOX : selection;
   const project = sel.kind === "project" ? projectById(sel.id) : undefined;
 
-  const list = tasksIn(tasks, space, sel);
+  const all = tasksIn(tasks, space, sel);
+  const list = hideDone ? all.filter((t) => !t.done) : all;
+  const hiddenDone = all.length - list.length;
+  // Progreso de las subtareas directas de una tarea (de todas, no solo las de la vista).
+  const progressOf = (id: string) => {
+    const subs = tasks.filter((t) => t.parentId === id);
+    return { done: subs.filter((t) => t.done).length, total: subs.length };
+  };
   const tree = isTree(sel);
   const childrenOf = (id: string) => sortTasks(list.filter((t) => t.parentId === id));
   // En árbol, las raíces son las tareas cuya madre no está en la lista.
@@ -289,6 +318,8 @@ function Tasks({ space }: { space: Space }) {
   }
 
   function addSubtask(parent: Task, text: string, due?: string, dueTime?: string) {
+    // Una subtarea nueva deja pendiente a su madre (y a las de más arriba) si estaba completada.
+    reopen(ancestorIds(tasks, parent.id, true));
     createTask({ space: parent.space, projectId: parent.projectId, parentId: parent.id, title: text, due, dueTime, priority: 4 });
   }
 
@@ -329,9 +360,25 @@ function Tasks({ space }: { space: Space }) {
     sync(insertProject(created));
   }
 
+  // Completar exige tener todas las subtareas completadas. Volver a dejar pendiente una
+  // subtarea deja pendientes también sus tareas madre.
   function toggle(task: Task) {
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: !task.done } : t)));
-    sync(setTaskDone(task.id, !task.done));
+    if (!task.done) {
+      if (tasks.some((t) => t.parentId === task.id && !t.done)) return;
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: true } : t)));
+      sync(setTasksDone([task.id], true));
+      return;
+    }
+    reopen([task.id, ...ancestorIds(tasks, task.id)]);
+  }
+
+  // Deja pendientes las tareas indicadas que estén completadas.
+  function reopen(ids: string[]) {
+    const toReopen = ids.filter((id) => tasks.find((t) => t.id === id)?.done);
+    if (!toReopen.length) return;
+    const set = new Set(toReopen);
+    setTasks((prev) => prev.map((t) => (set.has(t.id) ? { ...t, done: false } : t)));
+    sync(setTasksDone(toReopen, false));
   }
   function askRemoveTask(id: string) {
     const task = tasks.find((t) => t.id === id);
@@ -480,10 +527,20 @@ function Tasks({ space }: { space: Space }) {
                 </button>
               )}
             </h1>
-            <p className="text-sm text-muted">
-              {[spaceLabel, ...ancestors.map((a) => a.name)].join(" › ")} ·{" "}
-              {count === 1 ? "1 tarea pendiente" : `${count} tareas pendientes`}
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-x-3">
+              <p className="text-sm text-muted">
+                {[spaceLabel, ...ancestors.map((a) => a.name)].join(" › ")} ·{" "}
+                {count === 1 ? "1 tarea pendiente" : `${count} tareas pendientes`}
+              </p>
+              <button
+                onClick={toggleHideDone}
+                aria-pressed={hideDone}
+                className="-mr-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-[13px] font-semibold text-muted hover:bg-track hover:text-ink"
+              >
+                <EyeIcon size={15} off={hideDone} />
+                {hideDone ? `Mostrar completadas${hiddenDone ? ` (${hiddenDone})` : ""}` : "Ocultar completadas"}
+              </button>
+            </div>
           </header>
 
           {/* Modo rápido: escribe y Enter. El botón de ajustes abre el modo completo. */}
@@ -551,6 +608,7 @@ function Tasks({ space }: { space: Space }) {
                 onAddSubtask={addSubtask}
                 commentCount={commentCount}
                 onComments={(t) => setCommentsTaskId(t.id)}
+                progressOf={progressOf}
               />
             ))}
           </ul>
@@ -688,6 +746,7 @@ function TaskRow({
   onAddSubtask,
   commentCount,
   onComments,
+  progressOf,
 }: {
   task: Task;
   depth: number;
@@ -703,6 +762,7 @@ function TaskRow({
   onAddSubtask: (parent: Task, title: string, due?: string, dueTime?: string) => void;
   commentCount: (taskId: string) => number;
   onComments: (t: Task) => void;
+  progressOf: (id: string) => { done: number; total: number };
 }) {
   const [adding, setAdding] = useState(false);
   const subForm = useRef<HTMLFormElement>(null);
@@ -742,15 +802,21 @@ function TaskRow({
   const onlyTime = showDue && hideToday && t.due === today && !overdue;
   const showPriority = !t.done && t.priority < 4;
   const nComments = commentCount(t.id);
-  const showMeta = t.done || (showDue && (!onlyTime || !!t.dueTime)) || showPriority || nComments > 0 || !!context;
+  const progress = progressOf(t.id);
+  // No se puede completar mientras le queden subtareas pendientes.
+  const blocked = !t.done && progress.done < progress.total;
+  const showMeta =
+    t.done || (showDue && (!onlyTime || !!t.dueTime)) || showPriority || progress.total > 0 || nComments > 0 || !!context;
 
   return (
     <li className="flex flex-col">
       <div className="group flex items-start gap-1 border-b border-line py-1.5" style={indent}>
         <button
           onClick={() => onToggle(t)}
+          disabled={blocked}
           aria-label={`${t.done ? "Marcar como pendiente" : "Completar"}: ${t.title}`}
-          className="grid h-11 w-11 shrink-0 place-items-center"
+          title={blocked ? "Completa antes sus subtareas" : undefined}
+          className="grid h-11 w-11 shrink-0 place-items-center disabled:cursor-not-allowed disabled:opacity-40"
         >
           {t.done ? (
             <span className="grid h-6 w-6 place-items-center rounded-full bg-green text-on-green">
@@ -798,6 +864,17 @@ function TaskRow({
                   aria-label={`Prioridad ${t.priority}`}
                 >
                   <FlagIcon size={13} />P{t.priority}
+                </span>
+              )}
+              {progress.total > 0 && (
+                <span
+                  className={`inline-flex items-center gap-1 font-medium ${
+                    progress.done === progress.total ? "text-green" : "text-muted"
+                  }`}
+                  aria-label={`${progress.done} de ${progress.total} subtareas completadas`}
+                >
+                  <ProgressPie size={13} value={progress.done / progress.total} />
+                  {progress.done}/{progress.total}
                 </span>
               )}
               {nComments > 0 && (
@@ -886,6 +963,7 @@ function TaskRow({
               onAddSubtask={onAddSubtask}
               commentCount={commentCount}
               onComments={onComments}
+              progressOf={progressOf}
             />
           ))}
         </ul>

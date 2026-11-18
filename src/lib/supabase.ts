@@ -69,8 +69,8 @@ export async function insertTasks(tasks: Task[]) {
   if (error) throw error;
 }
 
-export async function setTaskDone(id: string, done: boolean) {
-  const { error } = await supabase!.from("tasks").update({ done }).eq("id", id);
+export async function setTasksDone(ids: string[], done: boolean) {
+  const { error } = await supabase!.from("tasks").update({ done }).in("id", ids);
   if (error) throw error;
 }
 

@@ -19,7 +19,7 @@ Primera versión (MVP):
 - Diseño adaptado: barra lateral en escritorio; en móvil, navegación inferior y botón flotante para añadir
 - Identidad propia: logo, tipografía Outfit, magenta en Personal y azul marino en Laboral, modo claro y oscuro
 - Cuenta de usuario y sincronización entre dispositivos con Supabase (obligatorio: sin configurar, la app no arranca)
-- **Lista de la compra compartida** en `/compra`: se crea la lista de casa, se invita a la familia con un enlace (caduca en 7 días) y los cambios se ven al momento en todos los móviles. Cantidad y nota opcionales, aviso si algo ya está en la lista, y «Terminar compra» quita lo que ya está en el carro
+- **Listas de la compra**, integradas en la app (destacadas antes de Proyectos y en la barra inferior del móvil, con el número de cosas por comprar). Todo el mundo empieza con «Mi lista»; al compartirla con un enlace (caduca en 7 días) pasa a llamarse «Compartida» («Compartida 2»…) y cualquiera puede renombrarla. Se puede tener varias, crear otra «Mi lista» y salir de una. Los cambios se ven al momento en todos los móviles; cantidad y nota opcionales, aviso si algo ya está en la lista, y «Terminar compra» quita lo que ya está en el carro
 
 ## Próximos pasos
 

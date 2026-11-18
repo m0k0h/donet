@@ -8,13 +8,13 @@ import {
   descendantProjectIds,
   dueLabel,
   isOverdue,
+  doneThisWeek,
+  groupByCompletion,
   isTree,
-  loadHideDone,
   loadLegacyTasks,
   localTasksUploaded,
   markLocalTasksUploaded,
   projectHex,
-  saveHideDone,
   saveSpace,
   sortTasks,
   spacePath,
@@ -37,11 +37,13 @@ import {
   insertComment,
   insertProject,
   insertTasks,
+  setHideDoneSubtasks,
   setTasksDone,
   supabase,
   updateProject,
   updateTask,
 } from "@/lib/supabase";
+import { consumeOpenShopping, loadPendingInvite } from "@/lib/shopping";
 import AuthScreen from "./AuthScreen";
 import CommentsDialog from "./CommentsDialog";
 import ConfirmDialog from "./ConfirmDialog";
@@ -49,9 +51,11 @@ import { DetectedDateChip, useDetectedDate } from "./DetectedDate";
 import { EmptyFilter } from "./EmptyFilter";
 import Dialog from "./Dialog";
 import Logo from "./Logo";
+import PageHeader from "./PageHeader";
 import ProjectDialog from "./ProjectDialog";
 import ProjectTree from "./ProjectTree";
 import SetupScreen from "./SetupScreen";
+import ShoppingPanel, { ShoppingNotice, useShopping } from "./ShoppingPanel";
 import TaskDialog, { type TaskDraft } from "./TaskDialog";
 import ThemeToggle from "./ThemeToggle";
 import {
@@ -121,20 +125,24 @@ function SpaceSwitch({ space, showLabel }: { space: Space; showLabel?: boolean }
   );
 }
 
-// Acceso a la lista de la compra compartida. En móvil va solo el icono.
-function ShoppingLink({ showLabel }: { showLabel?: boolean }) {
+// Acceso destacado a la lista de la compra compartida, en verde aunque se esté en otra sección.
+function ShoppingNavItem({ active, pending, onClick }: { active: boolean; pending: number; onClick: () => void }) {
   return (
-    <Link
-      href="/compra"
-      aria-label="Lista de la compra"
-      title="Lista de la compra"
-      className={`flex min-h-11 items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink ${
-        showLabel ? "gap-3 px-3.5 text-[15px] font-medium" : "w-11 justify-center"
-      }`}
-    >
-      <CartIcon size={showLabel ? 20 : 22} />
-      {showLabel && <span className="flex-1 text-ink">Compra</span>}
-    </Link>
+    <div data-space="compra">
+      <button
+        onClick={onClick}
+        aria-current={active ? "page" : undefined}
+        className={`flex min-h-12 w-full items-center gap-3 rounded-lg border px-2.5 text-left text-[15px] ${
+          active ? "border-transparent bg-accent-soft font-bold text-accent-ink" : "border-accent/40 font-semibold hover:bg-accent-soft/50"
+        }`}
+      >
+        <span className="grid h-[28px] w-[28px] shrink-0 place-items-center rounded-md bg-accent text-white">
+          <CartIcon size={17} />
+        </span>
+        <span className="flex-1">Compra</span>
+        {pending > 0 && <span className={`text-[13px] ${active ? "" : "text-accent"}`}>{pending}</span>}
+      </button>
+    </div>
   );
 }
 
@@ -177,17 +185,25 @@ function Tasks({ space }: { space: Space }) {
   // undefined = comprobando sesión, null = sin sesión.
   const [userId, setUserId] = useState<string | null | undefined>(undefined);
   const [syncError, setSyncError] = useState("");
-  const [hideDone, setHideDone] = useState(false);
+  // Recién completadas: se ven tachadas un momento antes de irse de la lista.
+  const [justDone, setJustDone] = useState<Set<string>>(new Set());
+  // Última tarea que se fue de la lista al completarla, para poder deshacerlo.
+  const [undo, setUndo] = useState<{ id: string; title: string } | null>(null);
+  // La Compra se abre en el panel principal, sin salir de la app.
+  const [shopping, setShopping] = useState(false);
+  const shop = useShopping(userId);
 
-  // La preferencia se lee al montar (no en el render inicial, para no chocar con el servidor).
-  useEffect(() => setHideDone(loadHideDone()), []);
+  // Se llega a la Compra desde /compra o con una invitación pendiente.
+  useEffect(() => {
+    if (consumeOpenShopping() || loadPendingInvite()) setShopping(true);
+  }, []);
 
-  function toggleHideDone() {
-    setHideDone((h) => {
-      saveHideDone(!h);
-      return !h;
-    });
-  }
+  // El aviso de «Deshacer» se va solo a los pocos segundos.
+  useEffect(() => {
+    if (!undo) return;
+    const t = setTimeout(() => setUndo(null), 5000);
+    return () => clearTimeout(t);
+  }, [undo]);
 
   // Recuerda la última sección abierta para volver a ella al entrar por la dirección principal.
   useEffect(() => saveSpace(space), [space]);
@@ -255,18 +271,26 @@ function Tasks({ space }: { space: Space }) {
     selection.kind === "project" && projectById(selection.id)?.space !== space ? INBOX : selection;
   const project = sel.kind === "project" ? projectById(sel.id) : undefined;
 
-  const all = tasksIn(tasks, space, sel);
-  const list = hideDone ? all.filter((t) => !t.done) : all;
-  const hiddenDone = all.length - list.length;
+  const list = tasksIn(tasks, space, sel);
+  const doneView = sel.kind === "done";
+  // Lo completado se va de las listas (salvo un momento, recién completado) y vive en Completadas.
+  const showInList = (t: Task) => !t.done || justDone.has(t.id);
   // Progreso de las subtareas directas de una tarea (de todas, no solo las de la vista).
   const progressOf = (id: string) => {
     const subs = tasks.filter((t) => t.parentId === id);
     return { done: subs.filter((t) => t.done).length, total: subs.length };
   };
   const tree = isTree(sel);
-  const childrenOf = (id: string) => sortTasks(list.filter((t) => t.parentId === id));
+  // Las subtareas completadas se ven bajo su tarea, salvo que esa tarea las oculte.
+  const childrenOf = (id: string) => {
+    const hide = tasks.find((p) => p.id === id)?.hideDoneSubtasks;
+    return sortTasks(list.filter((t) => t.parentId === id && (!hide || showInList(t))));
+  };
   // En árbol, las raíces son las tareas cuya madre no está en la lista.
-  const roots = sortTasks(tree ? list.filter((t) => !t.parentId || !list.some((p) => p.id === t.parentId)) : list);
+  const isRoot = (t: Task) => !tree || !t.parentId || !list.some((p) => p.id === t.parentId);
+  const roots = doneView ? [] : sortTasks(list.filter((t) => isRoot(t) && showInList(t)));
+  // Completadas de esta lista que ya no se ven, para el enlace a Completadas.
+  const doneHere = doneView ? 0 : list.filter((t) => isRoot(t) && t.done && !justDone.has(t.id)).length;
 
   const pendingIn = (s: Selection) => tasksIn(tasks, space, s).filter((t) => !t.done).length;
   const count = list.filter((t) => !t.done).length;
@@ -276,7 +300,7 @@ function Tasks({ space }: { space: Space }) {
   for (let p = projectById(project?.parentId); p; p = projectById(p.parentId)) ancestors.unshift(p);
 
   // Hoy y Próximo son filtros: no se añaden tareas desde ahí. Solo desde Entrada o un proyecto.
-  const canAdd = !(sel.kind === "view" && (sel.view === "today" || sel.view === "upcoming"));
+  const canAdd = !shopping && !doneView && !(sel.kind === "view" && (sel.view === "today" || sel.view === "upcoming"));
 
   // Dónde caen las tareas nuevas: en el proyecto abierto o, si no, en Entrada.
   const destProjectId = project?.id;
@@ -286,6 +310,7 @@ function Tasks({ space }: { space: Space }) {
 
   function select(s: Selection) {
     setSelection(s);
+    setShopping(false);
     setProjectsSheet(false);
     setComposerOpen(false);
   }
@@ -383,8 +408,22 @@ function Tasks({ space }: { space: Space }) {
   function toggle(task: Task) {
     if (!task.done) {
       if (tasks.some((t) => t.parentId === task.id && !t.done)) return;
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: true } : t)));
-      sync(setTasksDone([task.id], true));
+      const at = Date.now();
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: true, completedAt: at } : t)));
+      sync(setTasksDone([task.id], true, at));
+      if (!doneView && isRoot(task)) {
+        setJustDone((prev) => new Set(prev).add(task.id));
+        setTimeout(
+          () =>
+            setJustDone((prev) => {
+              const next = new Set(prev);
+              next.delete(task.id);
+              return next;
+            }),
+          1200,
+        );
+        setUndo({ id: task.id, title: task.title });
+      }
       return;
     }
     reopen([task.id, ...ancestorIds(tasks, task.id)]);
@@ -395,9 +434,16 @@ function Tasks({ space }: { space: Space }) {
     const toReopen = ids.filter((id) => tasks.find((t) => t.id === id)?.done);
     if (!toReopen.length) return;
     const set = new Set(toReopen);
-    setTasks((prev) => prev.map((t) => (set.has(t.id) ? { ...t, done: false } : t)));
+    setTasks((prev) => prev.map((t) => (set.has(t.id) ? { ...t, done: false, completedAt: undefined } : t)));
     sync(setTasksDone(toReopen, false));
   }
+  // Ocultar o mostrar las subtareas completadas de una tarea (se guarda en la tarea).
+  function toggleHideDoneSubtasks(task: Task) {
+    const hide = !task.hideDoneSubtasks;
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, hideDoneSubtasks: hide } : t)));
+    sync(setHideDoneSubtasks(task.id, hide));
+  }
+
   function askRemoveTask(id: string) {
     const task = tasks.find((t) => t.id === id);
     if (!task) return;
@@ -463,7 +509,7 @@ function Tasks({ space }: { space: Space }) {
     <ProjectTree
       space={space}
       projects={projects}
-      selectedId={project?.id}
+      selectedId={shopping ? undefined : project?.id}
       pendingOf={(id) => pendingIn({ kind: "project", id })}
       onSelect={(id) => select({ kind: "project", id })}
       onAdd={(parentId) => {
@@ -473,7 +519,12 @@ function Tasks({ space }: { space: Space }) {
     />
   );
 
-  const heading = project ? project.name : VIEWS.find((v) => sel.kind === "view" && v.id === sel.view)!.label;
+  const heading = project
+    ? project.name
+    : doneView
+      ? "Completadas"
+      : VIEWS.find((v) => sel.kind === "view" && v.id === sel.view)!.label;
+  const weekDone = doneView ? doneThisWeek(list) : 0;
 
   return (
     <div data-space={space} className="flex min-h-dvh">
@@ -485,7 +536,7 @@ function Tasks({ space }: { space: Space }) {
         <SpaceSwitch space={space} showLabel />
         <nav aria-label="Vistas" className="flex flex-col gap-1">
           {VIEWS.map((v) => {
-            const active = sel.kind === "view" && sel.view === v.id;
+            const active = !shopping && sel.kind === "view" && sel.view === v.id;
             return (
               <button
                 key={v.id}
@@ -503,9 +554,26 @@ function Tasks({ space }: { space: Space }) {
               </button>
             );
           })}
+          <button
+            onClick={() => select({ kind: "done" })}
+            aria-current={doneView && !shopping ? "page" : undefined}
+            className={`flex min-h-11 items-center gap-3 rounded-lg px-3.5 text-left text-[15px] ${
+              doneView && !shopping ? "bg-accent-soft font-bold text-accent-ink" : "font-medium text-muted hover:bg-track hover:text-ink"
+            }`}
+          >
+            <CheckIcon size={18} />
+            <span className="flex-1">Completadas</span>
+          </button>
         </nav>
+        <ShoppingNavItem
+          active={shopping}
+          pending={shop.pendingCount}
+          onClick={() => {
+            setShopping(true);
+            setComposerOpen(false);
+          }}
+        />
         {projectTree}
-        <ShoppingLink showLabel />
         {/* Zona de ajustes, abajo del todo */}
         <div className="mt-auto flex items-center justify-between">
           {signOut}
@@ -519,7 +587,6 @@ function Tasks({ space }: { space: Space }) {
             <Logo size={24} />
             <div className="flex items-center gap-1">
               {signOut}
-              <ShoppingLink />
               <SpaceSwitch space={space} />
             </div>
           </div>
@@ -530,108 +597,163 @@ function Tasks({ space }: { space: Space }) {
             </p>
           )}
 
-          <header className="flex flex-col gap-1">
-            <h1 className="flex items-center gap-3 text-[30px] font-extrabold leading-tight tracking-[-0.02em] md:text-[34px]">
-              {project && (
-                <span className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ background: projectHex(project.color) }} />
-              )}
-              <span className="min-w-0 flex-1 break-words">{heading}</span>
-              {project && (
-                <button
-                  onClick={() => setProjectDialog({ project })}
-                  aria-label={`Editar proyecto ${project.name}`}
-                  title="Editar proyecto"
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink"
-                >
-                  <PencilIcon size={20} />
-                </button>
-              )}
-            </h1>
-            <div className="flex flex-wrap items-center justify-between gap-x-3">
-              <p className="text-sm text-muted">
-                {[spaceLabel, ...ancestors.map((a) => a.name)].join(" › ")} ·{" "}
-                {count === 1 ? "1 tarea pendiente" : `${count} tareas pendientes`}
-              </p>
-              <button
-                onClick={toggleHideDone}
-                aria-pressed={hideDone}
-                className="-mr-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-[13px] font-semibold text-muted hover:bg-track hover:text-ink"
-              >
-                <EyeIcon size={15} off={hideDone} />
-                {hideDone ? `Mostrar completadas${hiddenDone ? ` (${hiddenDone})` : ""}` : "Ocultar completadas"}
-              </button>
+          {shopping ? (
+            <div data-space="compra" className="contents">
+              <ShoppingPanel shop={shop} userId={userId} />
             </div>
-          </header>
+          ) : (
+            <>
+            <PageHeader
+              title={heading}
+              leading={
+                project && (
+                  <span className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ background: projectHex(project.color) }} />
+                )
+              }
+              actions={
+                project && (
+                  <button
+                    onClick={() => setProjectDialog({ project })}
+                    aria-label={`Editar proyecto ${project.name}`}
+                    title="Editar proyecto"
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink"
+                  >
+                    <PencilIcon size={20} />
+                  </button>
+                )
+              }
+              context={[spaceLabel, ...ancestors.map((a) => a.name)].join(" › ")}
+              count={
+                doneView
+                  ? { label: weekDone === 0 ? "Nada esta semana" : `${weekDone} esta semana`, empty: weekDone === 0 }
+                  : {
+                      label: count === 0 ? "Todo hecho" : count === 1 ? "1 pendiente" : `${count} pendientes`,
+                      empty: count === 0,
+                    }
+              }
+            />
 
-          {/* Modo rápido: escribe y Enter. El botón de ajustes abre el modo completo. */}
-          {canAdd && (
-            <form
-              onSubmit={quickAdd}
-              className={`${composerOpen ? "flex" : "hidden"} flex-col gap-1.5 rounded-xl bg-sunk p-3 md:flex`}
-            >
-              <div className="flex items-center gap-2">
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Añadir tarea…"
-                  aria-label="Nombre de la tarea"
-                  autoFocus={composerOpen}
-                  className="min-h-11 min-w-0 flex-1 bg-transparent px-1 text-base outline-none placeholder:text-muted"
-                />
-                <button
-                  type="button"
-                  onClick={openTaskDialog}
-                  aria-label="Más opciones"
-                  title="Más opciones: descripción, fecha, prioridad, proyecto…"
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink"
-                >
-                  <SlidersIcon />
-                </button>
-                <button
-                  type="submit"
-                  disabled={!title.trim()}
-                  className="min-h-11 shrink-0 rounded-lg bg-accent px-4 text-sm font-bold text-white disabled:opacity-40"
-                >
-                  Añadir
-                </button>
-              </div>
-              {quickDate.detected && <DetectedDateChip detected={quickDate.detected} onIgnore={quickDate.ignore} />}
-            </form>
-          )}
+            {/* Modo rápido: escribe y Enter. El botón de ajustes abre el modo completo. */}
+            {canAdd && (
+              <form
+                onSubmit={quickAdd}
+                className={`${composerOpen ? "flex" : "hidden"} flex-col gap-1.5 rounded-xl bg-sunk p-3 md:flex`}
+              >
+                <div className="flex items-center gap-2">
+                  <input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Añadir tarea…"
+                    aria-label="Nombre de la tarea"
+                    autoFocus={composerOpen}
+                    className="min-h-11 min-w-0 flex-1 bg-transparent px-1 text-base outline-none placeholder:text-muted"
+                  />
+                  <button
+                    type="button"
+                    onClick={openTaskDialog}
+                    aria-label="Más opciones"
+                    title="Más opciones: descripción, fecha, prioridad, proyecto…"
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink"
+                  >
+                    <SlidersIcon />
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!title.trim()}
+                    className="min-h-11 shrink-0 rounded-lg bg-accent px-4 text-sm font-bold text-white disabled:opacity-40"
+                  >
+                    Añadir
+                  </button>
+                </div>
+                {quickDate.detected && <DetectedDateChip detected={quickDate.detected} onIgnore={quickDate.ignore} />}
+              </form>
+            )}
 
-          {loaded && roots.length === 0 && (
-            sel.kind === "view" && sel.view !== "inbox" ? (
-              <EmptyFilter view={sel.view} />
+            {loaded && !doneView && roots.length === 0 && (
+              sel.kind === "view" && sel.view !== "inbox" ? (
+                <EmptyFilter view={sel.view} />
+              ) : (
+                <p className="py-16 text-center text-muted">Nada por aquí. ¡Te has ganado un donete!</p>
+              )
+            )}
+
+            {loaded && doneView && list.length === 0 && (
+              <p className="py-16 text-center text-muted">
+                Aún no has completado nada en {spaceLabel}. Lo que completes aparecerá aquí.
+              </p>
+            )}
+
+            {doneView ? (
+              // Completadas, por el día en que se completaron. Desmarcar una la devuelve a su sitio.
+              groupByCompletion(list, today).map((g) => (
+                <section key={g.label} className="flex flex-col gap-1">
+                  <h2 className="text-sm font-bold text-muted first-letter:uppercase">
+                    {g.label} · {g.tasks.length}
+                  </h2>
+                  <ul className="flex flex-col">
+                    {g.tasks.map((t) => (
+                      <TaskRow
+                        key={t.id}
+                        task={t}
+                        depth={0}
+                        today={today}
+                        tree={false}
+                        childrenOf={childrenOf}
+                        context={{ parent: tasks.find((p) => p.id === t.parentId)?.title, project: projectById(t.projectId) }}
+                        onToggle={toggle}
+                        onEdit={setEditingTask}
+                        onRemove={askRemoveTask}
+                        onAddSubtask={addSubtask}
+                        commentCount={commentCount}
+                        onComments={(t) => setCommentsTaskId(t.id)}
+                        progressOf={progressOf}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ))
             ) : (
-              <p className="py-16 text-center text-muted">Nada por aquí. ¡Te has ganado un donete!</p>
-            )
-          )}
+              <ul className="flex flex-col">
+                {roots.map((t) => (
+                  <TaskRow
+                    key={t.id}
+                    task={t}
+                    depth={0}
+                    today={today}
+                    tree={tree}
+                    childrenOf={childrenOf}
+                    hideToday={sel.kind === "view" && sel.view === "today"}
+                    context={
+                      tree
+                        ? undefined
+                        : { parent: tasks.find((p) => p.id === t.parentId)?.title, project: projectById(t.projectId) }
+                    }
+                    onToggle={toggle}
+                    onEdit={setEditingTask}
+                    onRemove={askRemoveTask}
+                    onAddSubtask={addSubtask}
+                    commentCount={commentCount}
+                    onComments={(t) => setCommentsTaskId(t.id)}
+                    progressOf={progressOf}
+                    onToggleHideDone={toggleHideDoneSubtasks}
+                  />
+                ))}
+              </ul>
+            )}
 
-          <ul className="flex flex-col">
-            {roots.map((t) => (
-              <TaskRow
-                key={t.id}
-                task={t}
-                depth={0}
-                today={today}
-                tree={tree}
-                childrenOf={childrenOf}
-                hideToday={sel.kind === "view" && sel.view === "today"}
-                context={
-                  tree
-                    ? undefined
-                    : { parent: tasks.find((p) => p.id === t.parentId)?.title, project: projectById(t.projectId) }
-                }
-                onToggle={toggle}
-                onEdit={setEditingTask}
-                onRemove={askRemoveTask}
-                onAddSubtask={addSubtask}
-                commentCount={commentCount}
-                onComments={(t) => setCommentsTaskId(t.id)}
-                progressOf={progressOf}
-              />
-            ))}
-          </ul>
+            {/* Lo completado de esta lista no se pierde: está en Completadas. */}
+            {doneHere > 0 && (
+              <button
+                onClick={() => select({ kind: "done" })}
+                className="inline-flex min-h-11 items-center gap-2 self-start rounded-lg px-2 text-sm font-semibold text-muted hover:bg-track hover:text-ink"
+              >
+                <CheckIcon size={14} />
+                {doneHere === 1 ? "1 completada" : `${doneHere} completadas`}
+                <span aria-hidden="true">→</span>
+              </button>
+            )}
+            </>
+          )}
         </div>
       </main>
 
@@ -653,7 +775,7 @@ function Tasks({ space }: { space: Space }) {
       <div className="fixed inset-x-0 bottom-0 flex items-center gap-1 bg-sunk px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
         <nav aria-label="Vistas" className="flex flex-1 gap-1">
           {VIEWS.map((v) => {
-            const active = sel.kind === "view" && sel.view === v.id;
+            const active = !shopping && sel.kind === "view" && sel.view === v.id;
             return (
               <button
                 key={v.id}
@@ -668,11 +790,31 @@ function Tasks({ space }: { space: Space }) {
               </button>
             );
           })}
+          <div data-space="compra" className="flex flex-1">
+            <button
+              onClick={() => {
+                setShopping(true);
+                setComposerOpen(false);
+              }}
+              aria-current={shopping ? "page" : undefined}
+              className={`relative flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
+                shopping ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-accent"
+              }`}
+            >
+              <CartIcon size={22} />
+              Compra
+              {shop.pendingCount > 0 && !shopping && (
+                <span className="absolute right-1.5 top-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-accent px-1 text-[11px] font-bold text-white">
+                  {shop.pendingCount}
+                </span>
+              )}
+            </button>
+          </div>
           <button
             onClick={() => setProjectsSheet(true)}
-            aria-current={project ? "page" : undefined}
+            aria-current={project && !shopping ? "page" : undefined}
             className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
-              project ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
+              project && !shopping ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
             }`}
           >
             <FolderIcon size={22} />
@@ -681,6 +823,28 @@ function Tasks({ space }: { space: Space }) {
         </nav>
         <ThemeToggle />
       </div>
+
+      <ShoppingNotice notice={shop.notice} />
+
+      {undo && (
+        <div
+          role="status"
+          className="fixed inset-x-4 bottom-24 z-10 mx-auto flex max-w-sm items-center gap-3 rounded-xl bg-ink py-1.5 pl-4 pr-1.5 text-sm text-bg shadow-lg md:bottom-6"
+        >
+          <span className="min-w-0 flex-1 truncate">
+            <span className="font-semibold">Completada:</span> {undo.title}
+          </span>
+          <button
+            onClick={() => {
+              reopen([undo.id]);
+              setUndo(null);
+            }}
+            className="min-h-11 shrink-0 rounded-lg px-3 font-bold text-bg hover:bg-white/10"
+          >
+            Deshacer
+          </button>
+        </div>
+      )}
 
       {projectsSheet && (
         <Dialog title={`Proyectos · ${spaceLabel}`} onClose={() => setProjectsSheet(false)}>
@@ -767,6 +931,7 @@ function TaskRow({
   commentCount,
   onComments,
   progressOf,
+  onToggleHideDone,
 }: {
   task: Task;
   depth: number;
@@ -783,6 +948,8 @@ function TaskRow({
   commentCount: (taskId: string) => number;
   onComments: (t: Task) => void;
   progressOf: (id: string) => { done: number; total: number };
+  // Solo en árbol: ocultar o mostrar las subtareas completadas de esta tarea.
+  onToggleHideDone?: (t: Task) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const subForm = useRef<HTMLFormElement>(null);
@@ -983,9 +1150,25 @@ function TaskRow({
               commentCount={commentCount}
               onComments={onComments}
               progressOf={progressOf}
+              onToggleHideDone={onToggleHideDone}
             />
           ))}
         </ul>
+      )}
+
+      {tree && onToggleHideDone && progress.done > 0 && (
+        <div style={{ paddingLeft: (depth + 1) * 28 + 4 }}>
+          <button
+            onClick={() => onToggleHideDone(t)}
+            aria-pressed={!!t.hideDoneSubtasks}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-[13px] font-semibold text-muted hover:bg-track hover:text-ink"
+          >
+            <EyeIcon size={14} off={!!t.hideDoneSubtasks} />
+            {t.hideDoneSubtasks
+              ? `Mostrar ${progress.done === 1 ? "1 completada" : `${progress.done} completadas`}`
+              : `Ocultar ${progress.done === 1 ? "1 completada" : `${progress.done} completadas`}`}
+          </button>
+        </div>
       )}
 
       {adding && (

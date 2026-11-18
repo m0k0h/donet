@@ -1,9 +1,26 @@
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 
-export type Household = { id: string; name: string };
+// Una lista de la compra. Empieza como «Mi lista»; al compartirla pasa a «Compartida».
+export type Household = { id: string; name: string; memberCount: number };
 
-export type Member = { userId: string; name: string };
+export const DEFAULT_LIST_NAME = "Mi lista";
+
+// Como mucho se puede estar en 3 listas (la base de datos también lo impide).
+export const MAX_LISTS = 3;
+
+// La base de datos rechazó entrar en otra lista por el límite.
+export const isListLimit = (e: unknown) => !!e && typeof e === "object" && "message" in e && String(e.message).includes("list_limit");
+
+// «Mi lista», o «Mi lista 2», «Mi lista 3»… si ya existe.
+export function nextListName(existing: string[]) {
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? DEFAULT_LIST_NAME : `${DEFAULT_LIST_NAME} ${n}`;
+    if (!existing.includes(name)) return name;
+  }
+}
+
+export type Member = { householdId: string; userId: string; name: string };
 
 export type ShoppingItem = {
   id: string;
@@ -69,6 +86,25 @@ export function clearPendingInvite() {
   } catch {}
 }
 
+// /compra no es una pantalla aparte: deja esta marca y lleva a la app, que abre la Compra.
+const OPEN_KEY = "donet.openShopping.v1";
+
+export function requestOpenShopping() {
+  try {
+    sessionStorage.setItem(OPEN_KEY, "1");
+  } catch {}
+}
+
+export function consumeOpenShopping(): boolean {
+  try {
+    const open = sessionStorage.getItem(OPEN_KEY) === "1";
+    sessionStorage.removeItem(OPEN_KEY);
+    return open;
+  } catch {
+    return false;
+  }
+}
+
 // En GitHub Pages la app vive bajo /donet, así que el enlace lleva esa base.
 export const inviteLink = (code: string) =>
   `${window.location.origin}${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/compra/?unirse=${code}`;
@@ -82,7 +118,7 @@ export function saveHouseholdId(id: string) {
   } catch {}
 }
 
-function loadHouseholdId(): string | null {
+export function loadHouseholdId(): string | null {
   try {
     return localStorage.getItem(HOUSEHOLD_KEY);
   } catch {
@@ -90,27 +126,51 @@ function loadHouseholdId(): string | null {
   }
 }
 
-// El hogar de la persona: el último abierto aquí o, si no, el primero al que se unió.
-export async function fetchMyHousehold(userId: string): Promise<Household | null> {
+// Todas las listas de la persona, en el orden en que entró en ellas.
+export async function fetchMyHouseholds(userId: string): Promise<Household[]> {
   const { data, error } = await supabase!
     .from("household_members")
-    .select("joined_at, households (id, name)")
+    .select("joined_at, households (id, name, household_members (count))")
     .eq("user_id", userId)
     .order("joined_at");
   if (error) throw error;
-  const all = data.map((m) => m.households as unknown as Household).filter(Boolean);
-  const saved = loadHouseholdId();
-  return all.find((h) => h.id === saved) ?? all[0] ?? null;
+  type H = { id: string; name: string; household_members: { count: number }[] };
+  return data
+    .map((m) => m.households as unknown as H | null)
+    .filter((h): h is H => !!h)
+    .map((h) => ({ id: h.id, name: h.name, memberCount: h.household_members[0]?.count ?? 1 }));
 }
 
-export async function fetchMembers(householdId: string): Promise<Member[]> {
+export async function renameHousehold(id: string, name: string) {
+  const { error } = await supabase!.from("households").update({ name }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function leaveHousehold(id: string) {
+  const { error } = await supabase!.rpc("leave_household", { h: id });
+  if (error) throw error;
+}
+
+// El nombre con el que te ve el resto de la lista.
+export async function renameMember(householdId: string, userId: string, name: string) {
+  const { error } = await supabase!
+    .from("household_members")
+    .update({ display_name: name })
+    .eq("household_id", householdId)
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
+// Miembros de todas las listas, para saber quién añadió cada cosa.
+export async function fetchMembers(householdIds: string[]): Promise<Member[]> {
+  if (!householdIds.length) return [];
   const { data, error } = await supabase!
     .from("household_members")
-    .select("user_id, display_name")
-    .eq("household_id", householdId)
+    .select("household_id, user_id, display_name")
+    .in("household_id", householdIds)
     .order("joined_at");
   if (error) throw error;
-  return data.map((m) => ({ userId: m.user_id, name: m.display_name }));
+  return data.map((m) => ({ householdId: m.household_id, userId: m.user_id, name: m.display_name }));
 }
 
 export async function createHousehold(name: string, memberName: string): Promise<string> {
@@ -150,11 +210,13 @@ export async function joinHousehold(code: string, memberName: string): Promise<s
   return data as string;
 }
 
-export async function fetchItems(householdId: string): Promise<ShoppingItem[]> {
+// Artículos de todas las listas a la vez, para los contadores y los avisos.
+export async function fetchItems(householdIds: string[]): Promise<ShoppingItem[]> {
+  if (!householdIds.length) return [];
   const { data, error } = await supabase!
     .from("shopping_items")
     .select("*")
-    .eq("household_id", householdId)
+    .in("household_id", householdIds)
     .order("created_at");
   if (error) throw error;
   return (data as ItemRow[]).map(itemFromRow);
@@ -199,34 +261,24 @@ export async function clearChecked(householdId: string) {
   if (error) throw error;
 }
 
-// Escucha los cambios que hace cualquier miembro del hogar. Los borrados llegan
-// sin filtro (solo con el id), así que se aplican si el artículo está en la lista.
-export function subscribeItems(
-  householdId: string,
-  on: {
-    upsert: (item: ShoppingItem, isNew: boolean) => void;
-    remove: (id: string) => void;
-    reconnect: () => void;
-  },
-) {
+// Escucha los cambios en todas las listas de la persona: las reglas de seguridad
+// hacen que solo lleguen los de sus listas. Los borrados llegan solo con el id.
+export function subscribeItems(on: {
+  upsert: (item: ShoppingItem, isNew: boolean) => void;
+  remove: (id: string) => void;
+  reconnect: () => void;
+}) {
   const channel = supabase!
-    .channel(`shopping:${householdId}`)
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "shopping_items", filter: `household_id=eq.${householdId}` },
-      (p: RealtimePostgresChangesPayload<ItemRow>) => {
-        if (p.eventType === "DELETE") {
-          if (p.old.id) on.remove(p.old.id);
-        } else {
-          on.upsert(itemFromRow(p.new), p.eventType === "INSERT");
-        }
-      },
-    )
-    .on("postgres_changes", { event: "DELETE", schema: "public", table: "shopping_items" }, (p: RealtimePostgresChangesPayload<ItemRow>) => {
-      if (p.eventType === "DELETE" && p.old.id) on.remove(p.old.id);
+    .channel(`shopping:${crypto.randomUUID()}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "shopping_items" }, (p: RealtimePostgresChangesPayload<ItemRow>) => {
+      if (p.eventType === "DELETE") {
+        if (p.old.id) on.remove(p.old.id);
+      } else {
+        on.upsert(itemFromRow(p.new), p.eventType === "INSERT");
+      }
     })
     .subscribe((status) => {
-      // Al (re)conectar se recarga la lista por si se perdió algún cambio mientras tanto.
+      // Al (re)conectar se recarga todo por si se perdió algún cambio mientras tanto.
       if (status === "SUBSCRIBED") on.reconnect();
     });
   return () => {

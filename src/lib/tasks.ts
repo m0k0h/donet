@@ -22,6 +22,8 @@ export type Task = {
   due?: string; // YYYY-MM-DD
   dueTime?: string; // HH:MM, solo si hay fecha
   createdAt: number;
+  completedAt?: number; // cuándo se completó (las antiguas no lo tienen)
+  hideDoneSubtasks?: boolean; // oculta sus subtareas completadas
 };
 
 // Comentario de una tarea: solo texto, en orden de llegada.
@@ -66,8 +68,8 @@ export const VIEWS: { id: View; label: string }[] = [
   { id: "upcoming", label: "Próximo" },
 ];
 
-// Lo que se está mirando: una de las vistas o un proyecto.
-export type Selection = { kind: "view"; view: View } | { kind: "project"; id: string };
+// Lo que se está mirando: una de las vistas, un proyecto o el archivo de completadas.
+export type Selection = { kind: "view"; view: View } | { kind: "project"; id: string } | { kind: "done" };
 
 export const todayISO = () => new Date().toLocaleDateString("sv-SE");
 
@@ -106,13 +108,43 @@ export function tasksIn(all: Task[], space: Space, sel: Selection): Task[] {
   const today = todayISO();
   const tasks = all.filter((t) => t.space === space);
   if (sel.kind === "project") return tasks.filter((t) => t.projectId === sel.id);
+  if (sel.kind === "done") return tasks.filter((t) => t.done);
   if (sel.view === "inbox") return tasks.filter((t) => !t.projectId);
   if (sel.view === "today") return tasks.filter((t) => t.due && t.due <= today);
   return tasks.filter((t) => t.due && t.due > today);
 }
 
 // Las vistas por fecha son planas; Entrada y proyectos se muestran como árbol.
-export const isTree = (sel: Selection) => sel.kind === "project" || sel.view === "inbox";
+export const isTree = (sel: Selection) => sel.kind === "project" || (sel.kind === "view" && sel.view === "inbox");
+
+// Completadas agrupadas por el día en que se completaron, de la más reciente a la más
+// antigua. Las que no tienen fecha (completadas antes de guardarla) van al final, en «Antes».
+export function groupByCompletion(done: Task[], today: string): { label: string; tasks: Task[] }[] {
+  const groups = new Map<string, Task[]>();
+  const sorted = [...done].sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+  for (const t of sorted) {
+    const key = t.completedAt ? new Date(t.completedAt).toLocaleDateString("sv-SE") : "";
+    groups.set(key, [...(groups.get(key) ?? []), t]);
+  }
+  return [...groups].map(([day, tasks]) => ({
+    label: !day
+      ? "Antes"
+      : day === today
+        ? "Hoy"
+        : Math.round((Date.parse(today) - Date.parse(day)) / 86400000) === 1
+          ? "Ayer"
+          : new Date(day + "T00:00").toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "short" }),
+    tasks,
+  }));
+}
+
+// Cuántas se han completado desde el lunes de esta semana.
+export function doneThisWeek(done: Task[]) {
+  const monday = new Date();
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  return done.filter((t) => (t.completedAt ?? 0) >= monday.getTime()).length;
+}
 
 // Proyectos hijos de `parentId` (o los de primer nivel), por orden de creación.
 export const childProjects = (all: Project[], space: Space, parentId?: string) =>
@@ -148,22 +180,6 @@ export function loadLegacyTasks(): Task[] {
 }
 
 // Preferencia de ocultar las tareas completadas en la lista.
-const HIDE_DONE_KEY = "donet.hideDone.v1";
-
-export function loadHideDone(): boolean {
-  try {
-    return localStorage.getItem(HIDE_DONE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function saveHideDone(hide: boolean) {
-  try {
-    localStorage.setItem(HIDE_DONE_KEY, hide ? "1" : "0");
-  } catch {}
-}
-
 const SPACE_KEY = "donet.space.v1";
 
 export function loadSpace(): Space {

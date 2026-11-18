@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import ShoppingApp from "@/components/ShoppingApp";
+import OpenShopping from "./OpenShopping";
 
 export const metadata: Metadata = { title: "Compra · doneT" };
 
-// Lista de la compra compartida. Los enlaces de invitación llegan como /compra?unirse=CÓDIGO.
+// La Compra vive dentro de la app; esta dirección (y los enlaces de invitación,
+// /compra/?unirse=CÓDIGO) solo llevan hasta ella.
 export default function CompraPage() {
-  return <ShoppingApp />;
+  return <OpenShopping />;
 }

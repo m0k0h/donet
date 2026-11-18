@@ -104,6 +104,13 @@ drop policy if exists "task_comments_delete_own" on public.task_comments;
 create policy "task_comments_delete_own" on public.task_comments
   for delete to authenticated using ((select auth.uid()) = user_id);
 
+-- Cuándo se completó cada tarea (para la vista Completadas y las estadísticas).
+-- Las completadas antes de existir esta columna se quedan sin fecha.
+alter table public.tasks add column if not exists completed_at timestamptz;
+
+-- Si una tarea oculta sus subtareas completadas (se elige en cada tarea).
+alter table public.tasks add column if not exists hide_done_subtasks boolean not null default false;
+
 -- ─── Compra compartida ──────────────────────────────────────────────────────
 -- Un hogar agrupa a varias personas que comparten la lista de la compra.
 -- Crear un hogar y unirse a uno se hace con funciones (más abajo), no con
@@ -267,6 +274,9 @@ as $$
 $$;
 
 -- Se une al hogar de una invitación válida. Si ya era miembro, no cambia nada.
+-- Cuando una lista con el nombre por defecto («Mi lista», «Mi lista 2»…) pasa a
+-- tener más de una persona, se llama «Compartida» (o «Compartida 2», «Compartida 3»…
+-- si alguno de sus miembros ya tiene una lista con ese nombre).
 create or replace function public.join_household(invite_code text, member_name text)
 returns uuid
 language plpgsql
@@ -276,6 +286,8 @@ as $$
 declare
   uid uuid := (select auth.uid());
   h uuid;
+  n int := 1;
+  candidate text;
 begin
   if uid is null then raise exception 'not_authenticated'; end if;
   select household_id into h from public.household_invites
@@ -284,19 +296,81 @@ begin
   insert into public.household_members (household_id, user_id, display_name)
   values (h, uid, trim(member_name))
   on conflict (household_id, user_id) do nothing;
+
+  if (select count(*) from public.household_members where household_id = h) > 1
+     and (select name from public.households where id = h) ~ '^Mi lista( [0-9]+)?$' then
+    loop
+      candidate := case when n = 1 then 'Compartida' else 'Compartida ' || n end;
+      exit when not exists (
+        select 1 from public.households x
+        join public.household_members m on m.household_id = x.id
+        where x.id <> h and x.name = candidate
+          and m.user_id in (select user_id from public.household_members where household_id = h)
+      );
+      n := n + 1;
+    end loop;
+    update public.households set name = candidate where id = h;
+  end if;
   return h;
 end;
 $$;
+
+-- Sale de una lista. Si no queda nadie, la lista y sus artículos se borran.
+create or replace function public.leave_household(h uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  delete from public.household_members where household_id = h and user_id = (select auth.uid());
+  if not exists (select 1 from public.household_members where household_id = h) then
+    delete from public.households where id = h;
+  end if;
+end;
+$$;
+
+-- Como mucho 3 listas por persona, para que la pantalla no se desborde y evitar abusos.
+-- Se comprueba al entrar en una lista (crearla o unirse); si ya se era miembro, no cuenta.
+create or replace function public.check_household_limit()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if exists (
+    select 1 from public.household_members
+    where household_id = new.household_id and user_id = new.user_id
+  ) then
+    return new;
+  end if;
+  if (select count(*) from public.household_members where user_id = new.user_id) >= 3 then
+    raise exception 'list_limit';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists household_members_limit on public.household_members;
+create trigger household_members_limit
+  before insert on public.household_members
+  for each row execute function public.check_household_limit();
+
+-- Las listas nuevas se llaman «Mi lista» si no se dice otra cosa.
+alter table public.households alter column name set default 'Mi lista';
 
 -- Solo con sesión iniciada.
 revoke execute on function public.create_household(text, text) from public, anon;
 revoke execute on function public.create_household_invite(uuid) from public, anon;
 revoke execute on function public.household_invite_info(text) from public, anon;
 revoke execute on function public.join_household(text, text) from public, anon;
+revoke execute on function public.leave_household(uuid) from public, anon;
 grant execute on function public.create_household(text, text) to authenticated;
 grant execute on function public.create_household_invite(uuid) to authenticated;
 grant execute on function public.household_invite_info(text) to authenticated;
 grant execute on function public.join_household(text, text) to authenticated;
+grant execute on function public.leave_household(uuid) to authenticated;
 
 -- Cambios en tiempo real de la lista para todos los miembros.
 do $$

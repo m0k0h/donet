@@ -24,6 +24,14 @@ export type Task = {
   createdAt: number;
 };
 
+// Comentario de una tarea: solo texto, en orden de llegada.
+export type Comment = {
+  id: string;
+  taskId: string;
+  body: string;
+  createdAt: number;
+};
+
 // Colores que se pueden dar a un proyecto. El valor guardado es la clave.
 export const PROJECT_COLORS: { id: string; label: string; hex: string }[] = [
   { id: "gray", label: "Gris", hex: "#8b919c" },

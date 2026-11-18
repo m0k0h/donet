@@ -78,3 +78,28 @@ create index if not exists tasks_parent_id_idx on public.tasks (parent_id);
 
 -- Hora de la tarea (opcional, solo tiene sentido con fecha).
 alter table public.tasks add column if not exists due_time time;
+
+-- Comentarios de las tareas. Borrar una tarea borra sus comentarios.
+create table if not exists public.task_comments (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  task_id uuid not null references public.tasks (id) on delete cascade,
+  body text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists task_comments_task_id_idx on public.task_comments (task_id);
+
+alter table public.task_comments enable row level security;
+
+drop policy if exists "task_comments_select_own" on public.task_comments;
+create policy "task_comments_select_own" on public.task_comments
+  for select to authenticated using ((select auth.uid()) = user_id);
+
+drop policy if exists "task_comments_insert_own" on public.task_comments;
+create policy "task_comments_insert_own" on public.task_comments
+  for insert to authenticated with check ((select auth.uid()) = user_id);
+
+drop policy if exists "task_comments_delete_own" on public.task_comments;
+create policy "task_comments_delete_own" on public.task_comments
+  for delete to authenticated using ((select auth.uid()) = user_id);

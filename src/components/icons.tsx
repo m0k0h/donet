@@ -145,3 +145,9 @@ export const FlagIcon = ({ size }: P) => (
     <path d="M5 21V4M5 4h11l-2 4 2 4H5" />
   </Icon>
 );
+
+export const CommentIcon = ({ size }: P) => (
+  <Icon size={size}>
+    <path d="M4 5h16v11H9l-5 4z" />
+  </Icon>
+);

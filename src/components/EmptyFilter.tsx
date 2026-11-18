@@ -4,14 +4,15 @@ import type { View } from "@/lib/tasks";
 // Hoy: contento, con destellos. Próximo: echándose una siesta.
 // Usa los colores del espacio (--accent, --mark…), así sirve en claro, oscuro, Personal y Trabajo.
 
-const COPY: Record<"today" | "upcoming", { title: string; text: string }> = {
+const COPY: Record<Exclude<View, "inbox">, { title: string; text: string }> = {
   today: { title: "Día despejado", text: "No tienes nada para hoy. Aprovecha." },
   upcoming: { title: "Nada a la vista", text: "Tu agenda de los próximos días está en calma." },
+  agenda: { title: "Agenda despejada", text: "Nada para hoy ni para los próximos días." },
 };
 
-export function EmptyFilter({ view }: { view: Extract<View, "today" | "upcoming"> }) {
+export function EmptyFilter({ view }: { view: Exclude<View, "inbox"> }) {
   const { title, text } = COPY[view];
-  const happy = view === "today";
+  const happy = view !== "upcoming";
 
   return (
     <div className="flex flex-col items-center gap-4 py-14 text-center">

@@ -10,6 +10,7 @@ import {
   isOverdue,
   doneThisWeek,
   groupByCompletion,
+  groupByDue,
   isTree,
   loadLegacyTasks,
   localTasksUploaded,
@@ -70,7 +71,7 @@ import ProjectTree from "./ProjectTree";
 import SetupScreen from "./SetupScreen";
 import ShoppingPanel, { ShoppingNotice, useShopping } from "./ShoppingPanel";
 import TaskDialog, { type TaskDraft } from "./TaskDialog";
-import ThemeToggle from "./ThemeToggle";
+import ThemeToggle, { ThemeChoice } from "./ThemeToggle";
 import {
   CalendarIcon,
   CartIcon,
@@ -79,7 +80,8 @@ import {
   CommentIcon,
   EyeIcon,
   FlagIcon,
-  FolderIcon,
+  GearIcon,
+  MoreIcon,
   PencilIcon,
   PlusIcon,
   ProgressPie,
@@ -160,6 +162,34 @@ function ShoppingNavItem({ active, pending, onClick }: { active: boolean; pendin
   );
 }
 
+// Botón de la barra inferior del móvil: icono y nombre, resaltado si es la pantalla actual.
+function BarButton({
+  active,
+  tone,
+  onClick,
+  icon,
+  children,
+}: {
+  active: boolean;
+  tone?: "accent";
+  onClick: () => void;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={`relative flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
+        active ? "bg-accent-soft font-bold text-accent-ink" : `font-semibold ${tone === "accent" ? "text-accent" : "text-muted"}`
+      }`}
+    >
+      {icon}
+      {children}
+    </button>
+  );
+}
+
 // La app solo funciona con Supabase configurado: no hay modo sin conexión.
 export default function TaskApp({ space }: { space: Space }) {
   return supabase ? <Tasks space={space} /> : <SetupScreen />;
@@ -197,11 +227,14 @@ function Tasks({ space }: { space: Space }) {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   // Nuevo proyecto (con su padre, si se crea dentro de otro) o edición de uno existente.
   const [projectDialog, setProjectDialog] = useState<{ parentId?: string; project?: Project } | null>(null);
-  const [projectsSheet, setProjectsSheet] = useState(false);
+  // Móvil: la pantalla «Más» (cuenta, proyectos y etiquetas) y la ventana de Ajustes.
+  const [more, setMore] = useState(false);
+  const [settings, setSettings] = useState(false);
   // Confirmación pendiente antes de borrar algo.
   const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
   // undefined = comprobando sesión, null = sin sesión.
   const [userId, setUserId] = useState<string | null | undefined>(undefined);
+  const [email, setEmail] = useState("");
   const [syncError, setSyncError] = useState("");
   // Recién completadas: se ven tachadas un momento antes de irse de la lista.
   const [justDone, setJustDone] = useState<Set<string>>(new Set());
@@ -227,7 +260,10 @@ function Tasks({ space }: { space: Space }) {
   useEffect(() => saveSpace(space), [space]);
 
   useEffect(() => {
-    const { data } = supabase!.auth.onAuthStateChange((_event, session) => setUserId(session?.user.id ?? null));
+    const { data } = supabase!.auth.onAuthStateChange((_event, session) => {
+      setUserId(session?.user.id ?? null);
+      setEmail(session?.user.email ?? "");
+    });
     return () => data.subscription.unsubscribe();
   }, []);
 
@@ -342,7 +378,7 @@ function Tasks({ space }: { space: Space }) {
 
   // Hoy, Próximo, las etiquetas y Completadas son filtros: no se añaden tareas desde ahí.
   // Solo desde Entrada o un proyecto (y nunca con la Compra abierta).
-  const canAdd = !shopping && isTree(sel);
+  const canAdd = !shopping && !more && isTree(sel);
 
   // Dónde caen las tareas nuevas: en el proyecto abierto o, si no, en Entrada.
   const destProjectId = project?.id;
@@ -354,7 +390,19 @@ function Tasks({ space }: { space: Space }) {
   function select(s: Selection) {
     setSelection(s);
     setShopping(false);
-    setProjectsSheet(false);
+    setMore(false);
+    setComposerOpen(false);
+  }
+
+  function openShopping() {
+    setShopping(true);
+    setMore(false);
+    setComposerOpen(false);
+  }
+
+  function openMore() {
+    setMore(true);
+    setShopping(false);
     setComposerOpen(false);
   }
 
@@ -455,7 +503,7 @@ function Tasks({ space }: { space: Space }) {
   function createLabel(l: { name: string; color: string }) {
     const created: Label = { id: crypto.randomUUID(), space, createdAt: Date.now(), ...l };
     setLabels((prev) => [...prev, created]);
-    setSelection({ kind: "label", id: created.id });
+    select({ kind: "label", id: created.id });
     sync(insertLabels([created]));
   }
 
@@ -496,7 +544,7 @@ function Tasks({ space }: { space: Space }) {
   function createProject(p: { name: string; color: string; parentId?: string }) {
     const created: Project = { id: crypto.randomUUID(), space, createdAt: Date.now(), ...p };
     setProjects((prev) => [...prev, created]);
-    setSelection({ kind: "project", id: created.id });
+    select({ kind: "project", id: created.id });
     sync(insertProject(created));
   }
 
@@ -603,30 +651,27 @@ function Tasks({ space }: { space: Space }) {
     </button>
   );
 
+  // Lo que se ve en Más está seleccionado: un proyecto, una etiqueta o Completadas.
+  const offScreen = shopping || more;
+
   const projectTree = (
     <ProjectTree
       space={space}
       projects={projects}
-      selectedId={shopping ? undefined : project?.id}
+      selectedId={offScreen ? undefined : project?.id}
       pendingOf={(id) => pendingIn({ kind: "project", id })}
       onSelect={(id) => select({ kind: "project", id })}
-      onAdd={(parentId) => {
-        setProjectsSheet(false);
-        setProjectDialog({ parentId });
-      }}
+      onAdd={(parentId) => setProjectDialog({ parentId })}
     />
   );
 
   const labelList = (
     <LabelList
       labels={spaceLabels}
-      selectedId={shopping ? undefined : label?.id}
+      selectedId={offScreen ? undefined : label?.id}
       pendingOf={(id) => pendingIn({ kind: "label", id })}
       onSelect={(id) => select({ kind: "label", id })}
-      onAdd={() => {
-        setProjectsSheet(false);
-        setLabelDialog({});
-      }}
+      onAdd={() => setLabelDialog({})}
     />
   );
 
@@ -636,8 +681,33 @@ function Tasks({ space }: { space: Space }) {
       ? label.name
       : doneView
         ? "Completadas"
-        : VIEWS.find((v) => sel.kind === "view" && v.id === sel.view)!.label;
+        : sel.kind === "view" && sel.view === "agenda"
+          ? "Próximos"
+          : VIEWS.find((v) => sel.kind === "view" && v.id === sel.view)!.label;
   const weekDone = doneView ? doneThisWeek(list) : 0;
+  const agenda = sel.kind === "view" && sel.view === "agenda";
+  // Próximos (móvil) también se ve activo si se llegó a Hoy o Próximo desde escritorio.
+  const datesActive = !offScreen && sel.kind === "view" && sel.view !== "inbox";
+  const inboxActive = !offScreen && sel.kind === "view" && sel.view === "inbox";
+  const moreActive = more || (!shopping && (!!project || !!label || doneView));
+
+  const rowProps = {
+    today,
+    childrenOf,
+    onToggle: toggle,
+    onEdit: setEditingTask,
+    onRemove: askRemoveTask,
+    onAddSubtask: addSubtask,
+    commentCount,
+    onComments: (t: Task) => setCommentsTaskId(t.id),
+    progressOf,
+    labelsOf,
+    spaceLabels,
+  };
+  const flatContext = (t: Task): RowContext => ({
+    parent: tasks.find((p) => p.id === t.parentId)?.title,
+    project: projectById(t.projectId),
+  });
 
   return (
     <div data-space={space} className="flex min-h-dvh">
@@ -649,7 +719,7 @@ function Tasks({ space }: { space: Space }) {
         <SpaceSwitch space={space} showLabel />
         <nav aria-label="Vistas" className="flex flex-col gap-1">
           {VIEWS.map((v) => {
-            const active = !shopping && sel.kind === "view" && sel.view === v.id;
+            const active = !offScreen && sel.kind === "view" && sel.view === v.id;
             return (
               <button
                 key={v.id}
@@ -669,23 +739,16 @@ function Tasks({ space }: { space: Space }) {
           })}
           <button
             onClick={() => select({ kind: "done" })}
-            aria-current={doneView && !shopping ? "page" : undefined}
+            aria-current={doneView && !offScreen ? "page" : undefined}
             className={`flex min-h-11 items-center gap-3 rounded-lg px-3.5 text-left text-[15px] ${
-              doneView && !shopping ? "bg-accent-soft font-bold text-accent-ink" : "font-medium text-muted hover:bg-track hover:text-ink"
+              doneView && !offScreen ? "bg-accent-soft font-bold text-accent-ink" : "font-medium text-muted hover:bg-track hover:text-ink"
             }`}
           >
             <CheckIcon size={18} />
             <span className="flex-1">Completadas</span>
           </button>
         </nav>
-        <ShoppingNavItem
-          active={shopping}
-          pending={shop.pendingCount}
-          onClick={() => {
-            setShopping(true);
-            setComposerOpen(false);
-          }}
-        />
+        <ShoppingNavItem active={shopping} pending={shop.pendingCount} onClick={openShopping} />
         {projectTree}
         {labelList}
         {/* Zona de ajustes, abajo del todo */}
@@ -699,10 +762,7 @@ function Tasks({ space }: { space: Space }) {
         <div className="mx-auto flex max-w-[720px] flex-col gap-6">
           <div className="flex items-center justify-between md:hidden">
             <Logo size={24} />
-            <div className="flex items-center gap-1">
-              {signOut}
-              <SpaceSwitch space={space} />
-            </div>
+            <SpaceSwitch space={space} />
           </div>
 
           {syncError && (
@@ -715,6 +775,42 @@ function Tasks({ space }: { space: Space }) {
             <div data-space="compra" className="contents">
               <ShoppingPanel shop={shop} userId={userId} />
             </div>
+          ) : more ? (
+            <>
+              <PageHeader title="Más" context={spaceLabel} />
+              {/* Cuenta, con la rueda de Ajustes (tema y cerrar sesión). */}
+              <div className="flex items-center gap-3 rounded-xl bg-sunk py-2 pl-3 pr-1.5">
+                <span
+                  aria-hidden="true"
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent text-base font-bold uppercase text-white"
+                >
+                  {email.charAt(0) || "?"}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-semibold text-muted">Tu cuenta</p>
+                  <p className="truncate text-[15px] font-bold">{email || "Sesión iniciada"}</p>
+                </div>
+                <button
+                  onClick={() => setSettings(true)}
+                  aria-label="Ajustes"
+                  title="Ajustes"
+                  className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink"
+                >
+                  <GearIcon size={22} />
+                </button>
+              </div>
+              <nav aria-label="Archivo" className="flex flex-col">
+                <button
+                  onClick={() => select({ kind: "done" })}
+                  className="flex min-h-11 items-center gap-3 rounded-lg px-3.5 text-left text-[15px] font-medium hover:bg-track"
+                >
+                  <CheckIcon size={18} />
+                  <span className="flex-1">Completadas</span>
+                </button>
+              </nav>
+              {projectTree}
+              {labelList}
+            </>
           ) : (
             <>
             <PageHeader
@@ -847,6 +943,28 @@ function Tasks({ space }: { space: Space }) {
                   </ul>
                 </section>
               ))
+            ) : agenda ? (
+              // Próximos (móvil): Hoy, con lo vencido, y después día a día.
+              groupByDue(roots, today).map((g) => (
+                <section key={g.key} className="flex flex-col gap-1">
+                  <h2 className="text-sm font-bold text-muted first-letter:uppercase">
+                    {g.label} · {g.tasks.length}
+                  </h2>
+                  <ul className="flex flex-col">
+                    {g.tasks.map((t) => (
+                      <TaskRow
+                        key={t.id}
+                        task={t}
+                        depth={0}
+                        tree={false}
+                        hideToday={g.key === today}
+                        context={flatContext(t)}
+                        {...rowProps}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ))
             ) : (
               <ul className="flex flex-col">
                 {roots.map((t) => (
@@ -908,58 +1026,35 @@ function Tasks({ space }: { space: Space }) {
         </button>
       )}
 
-      {/* Barra inferior: solo móvil. Vistas y proyectos a la izquierda, tema a la derecha. */}
-      <div className="fixed inset-x-0 bottom-0 flex items-center gap-1 bg-sunk px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
-        <nav aria-label="Vistas" className="flex flex-1 gap-1">
-          {VIEWS.map((v) => {
-            const active = !shopping && sel.kind === "view" && sel.view === v.id;
-            return (
-              <button
-                key={v.id}
-                onClick={() => select({ kind: "view", view: v.id })}
-                aria-current={active ? "page" : undefined}
-                className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
-                  active ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
-                }`}
-              >
-                <ViewIcon view={v.id} size={22} />
-                {v.label}
-              </button>
-            );
-          })}
-          <div data-space="compra" className="flex flex-1">
-            <button
-              onClick={() => {
-                setShopping(true);
-                setComposerOpen(false);
-              }}
-              aria-current={shopping ? "page" : undefined}
-              className={`relative flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
-                shopping ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-accent"
-              }`}
-            >
-              <CartIcon size={22} />
-              Compra
-              {shop.pendingCount > 0 && !shopping && (
-                <span className="absolute right-1.5 top-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-accent px-1 text-[11px] font-bold text-white">
-                  {shop.pendingCount}
-                </span>
-              )}
-            </button>
-          </div>
-          <button
-            onClick={() => setProjectsSheet(true)}
-            aria-current={(project || label) && !shopping ? "page" : undefined}
-            className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs ${
-              (project || label) && !shopping ? "bg-accent-soft font-bold text-accent-ink" : "font-semibold text-muted"
-            }`}
-          >
-            <FolderIcon size={22} />
-            Proyectos
-          </button>
-        </nav>
-        <ThemeToggle />
-      </div>
+      {/* Barra inferior: solo móvil. Entrada, Próximos (Hoy + Próximo), Compra y Más. */}
+      <nav
+        aria-label="Secciones"
+        className="fixed inset-x-0 bottom-0 flex gap-1 bg-sunk px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden"
+      >
+        <BarButton active={inboxActive} onClick={() => select(INBOX)} icon={<ViewIcon view="inbox" size={22} />}>
+          Entrada
+        </BarButton>
+        <BarButton
+          active={datesActive}
+          onClick={() => select({ kind: "view", view: "agenda" })}
+          icon={<ViewIcon view="upcoming" size={22} />}
+        >
+          Próximos
+        </BarButton>
+        <div data-space="compra" className="flex flex-1">
+          <BarButton active={shopping} tone="accent" onClick={openShopping} icon={<CartIcon size={22} />}>
+            Compra
+            {shop.pendingCount > 0 && !shopping && (
+              <span className="absolute right-1.5 top-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-accent px-1 text-[11px] font-bold text-white">
+                {shop.pendingCount}
+              </span>
+            )}
+          </BarButton>
+        </div>
+        <BarButton active={moreActive} onClick={openMore} icon={<MoreIcon size={22} />}>
+          Más
+        </BarButton>
+      </nav>
 
       <ShoppingNotice notice={shop.notice} />
 
@@ -983,12 +1078,26 @@ function Tasks({ space }: { space: Space }) {
         </div>
       )}
 
-      {projectsSheet && (
-        <Dialog title={`Proyectos · ${spaceLabel}`} onClose={() => setProjectsSheet(false)}>
-          <div className="flex max-h-[60dvh] flex-col gap-4 overflow-y-auto">
-            {projectTree}
-            {labelList}
-          </div>
+      {settings && (
+        <Dialog title="Ajustes" onClose={() => setSettings(false)}>
+          <section className="flex flex-col gap-2">
+            <h3 className="text-[13px] font-bold uppercase tracking-wide text-muted">Tema</h3>
+            <ThemeChoice />
+          </section>
+          <section className="flex flex-col gap-2">
+            <h3 className="text-[13px] font-bold uppercase tracking-wide text-muted">Cuenta</h3>
+            {email && <p className="truncate text-[15px]">{email}</p>}
+            <button
+              onClick={() => {
+                setSettings(false);
+                setMore(false);
+                supabase!.auth.signOut();
+              }}
+              className="min-h-11 rounded-lg bg-sunk px-4 text-[15px] font-bold text-danger hover:bg-track"
+            >
+              Cerrar sesión
+            </button>
+          </section>
         </Dialog>
       )}
 

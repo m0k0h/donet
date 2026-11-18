@@ -60,7 +60,8 @@ export type Project = {
   createdAt: number;
 };
 
-export type View = "inbox" | "today" | "upcoming";
+// «agenda» es la vista de móvil que junta Hoy y Próximo (en la barra de abajo, «Próximos»).
+export type View = "inbox" | "today" | "upcoming" | "agenda";
 
 export const VIEWS: { id: View; label: string }[] = [
   { id: "inbox", label: "Entrada" },
@@ -146,6 +147,7 @@ export function tasksIn(all: Task[], space: Space, sel: Selection, links: TaskLa
   }
   if (sel.view === "inbox") return tasks.filter((t) => !t.projectId);
   if (sel.view === "today") return tasks.filter((t) => t.due && t.due <= today);
+  if (sel.view === "agenda") return tasks.filter((t) => t.due);
   return tasks.filter((t) => t.due && t.due > today);
 }
 
@@ -171,6 +173,30 @@ export function groupByCompletion(done: Task[], today: string): { label: string;
           : new Date(day + "T00:00").toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "short" }),
     tasks,
   }));
+}
+
+// Agenda (Hoy + Próximo): primero «Hoy», con lo vencido; después un grupo por día.
+export function groupByDue(list: Task[], today: string): { key: string; label: string; tasks: Task[] }[] {
+  const groups = new Map<string, Task[]>();
+  for (const t of sortTasks(list)) {
+    const key = t.due! <= today ? today : t.due!;
+    groups.set(key, [...(groups.get(key) ?? []), t]);
+  }
+  return [...groups]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([day, tasks]) => {
+      const days = Math.round((Date.parse(day) - Date.parse(today)) / 86400000);
+      return {
+        key: day,
+        label:
+          days === 0
+            ? "Hoy"
+            : days === 1
+              ? "Mañana"
+              : new Date(day + "T00:00").toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "short" }),
+        tasks,
+      };
+    });
 }
 
 // Cuántas se han completado desde el lunes de esta semana.

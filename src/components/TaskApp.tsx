@@ -9,15 +9,18 @@ import {
   dueLabel,
   isOverdue,
   isTree,
+  loadHideDone,
   loadLegacyTasks,
   localTasksUploaded,
   markLocalTasksUploaded,
   projectHex,
+  saveHideDone,
   saveSpace,
   sortTasks,
   spacePath,
   tasksIn,
   todayISO,
+  type Comment,
   type Priority,
   type Project,
   type Selection,
@@ -25,18 +28,22 @@ import {
   type Task,
 } from "@/lib/tasks";
 import {
+  deleteComment,
   deleteProject,
   deleteTask,
+  fetchComments,
   fetchProjects,
   fetchTasks,
+  insertComment,
   insertProject,
   insertTasks,
-  setTaskDone,
+  setTasksDone,
   supabase,
   updateProject,
   updateTask,
 } from "@/lib/supabase";
 import AuthScreen from "./AuthScreen";
+import CommentsDialog from "./CommentsDialog";
 import ConfirmDialog from "./ConfirmDialog";
 import { DetectedDateChip, useDetectedDate } from "./DetectedDate";
 import { EmptyFilter } from "./EmptyFilter";
@@ -52,10 +59,13 @@ import {
   CartIcon,
   CheckIcon,
   ClockIcon,
+  CommentIcon,
+  EyeIcon,
   FlagIcon,
   FolderIcon,
   PencilIcon,
   PlusIcon,
+  ProgressPie,
   SlidersIcon,
   SpaceIcon,
   SubtaskIcon,
@@ -135,6 +145,13 @@ export default function TaskApp({ space }: { space: Space }) {
 
 const INBOX: Selection = { kind: "view", view: "inbox" };
 
+// Tareas madre de una tarea, de la más cercana hacia arriba (con `self`, empezando por ella).
+function ancestorIds(all: Task[], id: string, self = false): string[] {
+  const out: string[] = self ? [id] : [];
+  for (let t = all.find((x) => x.id === id); t?.parentId; t = all.find((x) => x.id === t!.parentId)) out.push(t.parentId);
+  return out;
+}
+
 // Todas las subtareas (a cualquier profundidad) de una tarea.
 function descendantIds(all: Task[], id: string): string[] {
   return all.filter((t) => t.parentId === id).flatMap((t) => [t.id, ...descendantIds(all, t.id)]);
@@ -143,6 +160,9 @@ function descendantIds(all: Task[], id: string): string[] {
 function Tasks({ space }: { space: Space }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
+  // Tarea cuyos comentarios están abiertos.
+  const [commentsTaskId, setCommentsTaskId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [selection, setSelection] = useState<Selection>(INBOX);
   const [title, setTitle] = useState("");
@@ -157,6 +177,17 @@ function Tasks({ space }: { space: Space }) {
   // undefined = comprobando sesión, null = sin sesión.
   const [userId, setUserId] = useState<string | null | undefined>(undefined);
   const [syncError, setSyncError] = useState("");
+  const [hideDone, setHideDone] = useState(false);
+
+  // La preferencia se lee al montar (no en el render inicial, para no chocar con el servidor).
+  useEffect(() => setHideDone(loadHideDone()), []);
+
+  function toggleHideDone() {
+    setHideDone((h) => {
+      saveHideDone(!h);
+      return !h;
+    });
+  }
 
   // Recuerda la última sección abierta para volver a ella al entrar por la dirección principal.
   useEffect(() => saveSpace(space), [space]);
@@ -172,6 +203,7 @@ function Tasks({ space }: { space: Space }) {
     if (!userId) {
       setTasks([]);
       setProjects([]);
+      setComments([]);
       setLoaded(false);
       return;
     }
@@ -187,6 +219,10 @@ function Tasks({ space }: { space: Space }) {
         setTasks(remoteTasks);
         setProjects(remoteProjects);
         setSyncError("");
+        // Los comentarios van aparte: si la tabla aún no existe, las tareas se ven igual.
+        fetchComments()
+          .then((c) => !cancelled && setComments(c))
+          .catch(() => {});
       } catch {
         if (!cancelled) setSyncError("No se han podido cargar las tareas. Comprueba la conexión.");
       }
@@ -205,6 +241,7 @@ function Tasks({ space }: { space: Space }) {
         const [remoteTasks, remoteProjects] = await Promise.all([fetchTasks(), fetchProjects()]);
         setTasks(remoteTasks);
         setProjects(remoteProjects);
+        setComments(await fetchComments());
       } catch {}
     });
   }
@@ -218,7 +255,14 @@ function Tasks({ space }: { space: Space }) {
     selection.kind === "project" && projectById(selection.id)?.space !== space ? INBOX : selection;
   const project = sel.kind === "project" ? projectById(sel.id) : undefined;
 
-  const list = tasksIn(tasks, space, sel);
+  const all = tasksIn(tasks, space, sel);
+  const list = hideDone ? all.filter((t) => !t.done) : all;
+  const hiddenDone = all.length - list.length;
+  // Progreso de las subtareas directas de una tarea (de todas, no solo las de la vista).
+  const progressOf = (id: string) => {
+    const subs = tasks.filter((t) => t.parentId === id);
+    return { done: subs.filter((t) => t.done).length, total: subs.length };
+  };
   const tree = isTree(sel);
   const childrenOf = (id: string) => sortTasks(list.filter((t) => t.parentId === id));
   // En árbol, las raíces son las tareas cuya madre no está en la lista.
@@ -292,6 +336,8 @@ function Tasks({ space }: { space: Space }) {
   }
 
   function addSubtask(parent: Task, text: string, due?: string, dueTime?: string) {
+    // Una subtarea nueva deja pendiente a su madre (y a las de más arriba) si estaba completada.
+    reopen(ancestorIds(tasks, parent.id, true));
     createTask({ space: parent.space, projectId: parent.projectId, parentId: parent.id, title: text, due, dueTime, priority: 4 });
   }
 
@@ -332,9 +378,25 @@ function Tasks({ space }: { space: Space }) {
     sync(insertProject(created));
   }
 
+  // Completar exige tener todas las subtareas completadas. Volver a dejar pendiente una
+  // subtarea deja pendientes también sus tareas madre.
   function toggle(task: Task) {
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: !task.done } : t)));
-    sync(setTaskDone(task.id, !task.done));
+    if (!task.done) {
+      if (tasks.some((t) => t.parentId === task.id && !t.done)) return;
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: true } : t)));
+      sync(setTasksDone([task.id], true));
+      return;
+    }
+    reopen([task.id, ...ancestorIds(tasks, task.id)]);
+  }
+
+  // Deja pendientes las tareas indicadas que estén completadas.
+  function reopen(ids: string[]) {
+    const toReopen = ids.filter((id) => tasks.find((t) => t.id === id)?.done);
+    if (!toReopen.length) return;
+    const set = new Set(toReopen);
+    setTasks((prev) => prev.map((t) => (set.has(t.id) ? { ...t, done: false } : t)));
+    sync(setTasksDone(toReopen, false));
   }
   function askRemoveTask(id: string) {
     const task = tasks.find((t) => t.id === id);
@@ -359,12 +421,31 @@ function Tasks({ space }: { space: Space }) {
 
   // Al borrar una tarea se van también sus subtareas (la base de datos hace lo mismo).
   function remove(id: string) {
-    setTasks((prev) => {
-      const gone = new Set([id, ...descendantIds(prev, id)]);
-      return prev.filter((t) => !gone.has(t.id));
-    });
+    const gone = new Set([id, ...descendantIds(tasks, id)]);
+    setTasks((prev) => prev.filter((t) => !gone.has(t.id)));
+    setComments((prev) => prev.filter((c) => !gone.has(c.taskId)));
     sync(deleteTask(id));
   }
+
+  function addComment(taskId: string, body: string) {
+    const comment: Comment = { id: crypto.randomUUID(), taskId, body, createdAt: Date.now() };
+    setComments((prev) => [...prev, comment]);
+    sync(insertComment(comment));
+  }
+
+  function askRemoveComment(c: Comment) {
+    setConfirm({
+      title: "Borrar comentario",
+      message: "¿Borrar este comentario? No se puede deshacer.",
+      onConfirm: () => {
+        setComments((prev) => prev.filter((x) => x.id !== c.id));
+        sync(deleteComment(c.id));
+      },
+    });
+  }
+
+  const commentCount = (taskId: string) => comments.filter((c) => c.taskId === taskId).length;
+  const commentsTask = tasks.find((t) => t.id === commentsTaskId);
 
   if (userId === undefined) return <div className="min-h-dvh" />;
   if (!userId) return <AuthScreen />;
@@ -466,10 +547,20 @@ function Tasks({ space }: { space: Space }) {
                 </button>
               )}
             </h1>
-            <p className="text-sm text-muted">
-              {[spaceLabel, ...ancestors.map((a) => a.name)].join(" › ")} ·{" "}
-              {count === 1 ? "1 tarea pendiente" : `${count} tareas pendientes`}
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-x-3">
+              <p className="text-sm text-muted">
+                {[spaceLabel, ...ancestors.map((a) => a.name)].join(" › ")} ·{" "}
+                {count === 1 ? "1 tarea pendiente" : `${count} tareas pendientes`}
+              </p>
+              <button
+                onClick={toggleHideDone}
+                aria-pressed={hideDone}
+                className="-mr-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-[13px] font-semibold text-muted hover:bg-track hover:text-ink"
+              >
+                <EyeIcon size={15} off={hideDone} />
+                {hideDone ? `Mostrar completadas${hiddenDone ? ` (${hiddenDone})` : ""}` : "Ocultar completadas"}
+              </button>
+            </div>
           </header>
 
           {/* Modo rápido: escribe y Enter. El botón de ajustes abre el modo completo. */}
@@ -535,6 +626,9 @@ function Tasks({ space }: { space: Space }) {
                 onEdit={setEditingTask}
                 onRemove={askRemoveTask}
                 onAddSubtask={addSubtask}
+                commentCount={commentCount}
+                onComments={(t) => setCommentsTaskId(t.id)}
+                progressOf={progressOf}
               />
             ))}
           </ul>
@@ -617,6 +711,16 @@ function Tasks({ space }: { space: Space }) {
         />
       )}
 
+      {commentsTask && (
+        <CommentsDialog
+          task={commentsTask}
+          comments={comments.filter((c) => c.taskId === commentsTask.id)}
+          onAdd={(body) => addComment(commentsTask.id, body)}
+          onRemove={askRemoveComment}
+          onClose={() => setCommentsTaskId(null)}
+        />
+      )}
+
       {confirm && (
         <ConfirmDialog
           title={confirm.title}
@@ -660,6 +764,9 @@ function TaskRow({
   onEdit,
   onRemove,
   onAddSubtask,
+  commentCount,
+  onComments,
+  progressOf,
 }: {
   task: Task;
   depth: number;
@@ -673,6 +780,9 @@ function TaskRow({
   onEdit: (t: Task) => void;
   onRemove: (id: string) => void;
   onAddSubtask: (parent: Task, title: string, due?: string, dueTime?: string) => void;
+  commentCount: (taskId: string) => number;
+  onComments: (t: Task) => void;
+  progressOf: (id: string) => { done: number; total: number };
 }) {
   const [adding, setAdding] = useState(false);
   const subForm = useRef<HTMLFormElement>(null);
@@ -711,15 +821,22 @@ function TaskRow({
   const showDue = !t.done && !!t.due;
   const onlyTime = showDue && hideToday && t.due === today && !overdue;
   const showPriority = !t.done && t.priority < 4;
-  const showMeta = t.done || (showDue && (!onlyTime || !!t.dueTime)) || showPriority || !!context;
+  const nComments = commentCount(t.id);
+  const progress = progressOf(t.id);
+  // No se puede completar mientras le queden subtareas pendientes.
+  const blocked = !t.done && progress.done < progress.total;
+  const showMeta =
+    (showDue && (!onlyTime || !!t.dueTime)) || showPriority || progress.total > 0 || nComments > 0 || !!context;
 
   return (
     <li className="flex flex-col">
       <div className="group flex items-start gap-1 border-b border-line py-1.5" style={indent}>
         <button
           onClick={() => onToggle(t)}
+          disabled={blocked}
           aria-label={`${t.done ? "Marcar como pendiente" : "Completar"}: ${t.title}`}
-          className="grid h-11 w-11 shrink-0 place-items-center"
+          title={blocked ? "Completa antes sus subtareas" : undefined}
+          className="grid h-11 w-11 shrink-0 place-items-center disabled:cursor-not-allowed disabled:opacity-40"
         >
           {t.done ? (
             <span className="grid h-6 w-6 place-items-center rounded-full bg-green text-on-green">
@@ -745,7 +862,6 @@ function TaskRow({
           {t.description && <Description text={t.description} />}
           {showMeta && (
             <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
-              {t.done && <span className="font-semibold text-green">Hecha</span>}
               {showDue &&
                 (onlyTime ? (
                   t.dueTime && (
@@ -768,6 +884,30 @@ function TaskRow({
                 >
                   <FlagIcon size={13} />P{t.priority}
                 </span>
+              )}
+              {progress.total > 0 && (
+                <span
+                  className={`inline-flex items-center gap-1 font-medium ${
+                    progress.done === progress.total ? "text-green" : "text-muted"
+                  }`}
+                  aria-label={`${progress.done} de ${progress.total} subtareas completadas`}
+                >
+                  <ProgressPie size={13} value={progress.done / progress.total} />
+                  {progress.done}/{progress.total}
+                </span>
+              )}
+              {nComments > 0 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onComments(t);
+                  }}
+                  aria-label={`${nComments === 1 ? "1 comentario" : `${nComments} comentarios`}: ${t.title}`}
+                  className="inline-flex items-center gap-1 rounded font-medium text-muted hover:text-ink"
+                >
+                  <CommentIcon size={13} />
+                  {nComments}
+                </button>
               )}
               {context && (
                 <span className="ml-auto inline-flex min-w-0 max-w-full items-center gap-1.5 text-muted">
@@ -810,6 +950,14 @@ function TaskRow({
           </button>
         )}
         <button
+          onClick={() => onComments(t)}
+          aria-label={`Comentarios de: ${t.title}`}
+          title="Comentarios"
+          className="grid h-11 w-11 shrink-0 place-items-center text-muted hover:text-ink md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
+        >
+          <CommentIcon size={18} />
+        </button>
+        <button
           onClick={() => onRemove(t.id)}
           aria-label={`Eliminar: ${t.title}`}
           className="grid h-11 w-11 shrink-0 place-items-center text-muted hover:text-danger md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
@@ -832,6 +980,9 @@ function TaskRow({
               onEdit={onEdit}
               onRemove={onRemove}
               onAddSubtask={onAddSubtask}
+              commentCount={commentCount}
+              onComments={onComments}
+              progressOf={progressOf}
             />
           ))}
         </ul>

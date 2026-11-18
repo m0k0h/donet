@@ -1,5 +1,5 @@
 import { createBrowserClient } from "@supabase/ssr";
-import type { Priority, Project, Space, Task } from "./tasks";
+import type { Comment, Priority, Project, Space, Task } from "./tasks";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -69,8 +69,8 @@ export async function insertTasks(tasks: Task[]) {
   if (error) throw error;
 }
 
-export async function setTaskDone(id: string, done: boolean) {
-  const { error } = await supabase!.from("tasks").update({ done }).eq("id", id);
+export async function setTasksDone(ids: string[], done: boolean) {
+  const { error } = await supabase!.from("tasks").update({ done }).in("id", ids);
   if (error) throw error;
 }
 
@@ -143,5 +143,36 @@ export async function updateProject(id: string, c: Pick<Project, "name" | "color
 // Borra el proyecto; la base de datos borra también sus subproyectos y sus tareas.
 export async function deleteProject(id: string) {
   const { error } = await supabase!.from("projects").delete().eq("id", id);
+  if (error) throw error;
+}
+
+type CommentRow = { id: string; task_id: string; body: string; created_at: string };
+
+export async function fetchComments(): Promise<Comment[]> {
+  const { data, error } = await supabase!
+    .from("task_comments")
+    .select("id, task_id, body, created_at")
+    .order("created_at");
+  if (error) throw error;
+  return (data as CommentRow[]).map((r) => ({
+    id: r.id,
+    taskId: r.task_id,
+    body: r.body,
+    createdAt: Date.parse(r.created_at),
+  }));
+}
+
+export async function insertComment(c: Comment) {
+  const { error } = await supabase!.from("task_comments").insert({
+    id: c.id,
+    task_id: c.taskId,
+    body: c.body,
+    created_at: new Date(c.createdAt).toISOString(),
+  });
+  if (error) throw error;
+}
+
+export async function deleteComment(id: string) {
+  const { error } = await supabase!.from("task_comments").delete().eq("id", id);
   if (error) throw error;
 }

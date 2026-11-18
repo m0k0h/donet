@@ -69,7 +69,9 @@ export function clearPendingInvite() {
   } catch {}
 }
 
-export const inviteLink = (code: string) => `${window.location.origin}/compra?unirse=${code}`;
+// En GitHub Pages la app vive bajo /donet, así que el enlace lleva esa base.
+export const inviteLink = (code: string) =>
+  `${window.location.origin}${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/compra/?unirse=${code}`;
 
 // Hogar abierto la última vez en este navegador (por si se pertenece a más de uno).
 const HOUSEHOLD_KEY = "donet.household.v1";

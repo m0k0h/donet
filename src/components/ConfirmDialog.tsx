@@ -2,17 +2,19 @@
 
 import Dialog from "./Dialog";
 
-// Pregunta antes de una acción que no se puede deshacer (por ahora, borrar).
+// Pregunta antes de una acción que no se puede deshacer (borrar, terminar la compra…).
 export default function ConfirmDialog({
   title,
   message,
   confirmLabel = "Borrar",
+  tone = "danger",
   onConfirm,
   onClose,
 }: {
   title: string;
   message: string;
   confirmLabel?: string;
+  tone?: "danger" | "accent";
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -33,7 +35,7 @@ export default function ConfirmDialog({
             onConfirm();
             onClose();
           }}
-          className="min-h-11 rounded-lg bg-danger px-5 text-sm font-bold text-bg"
+          className={`min-h-11 rounded-lg px-5 text-sm font-bold ${tone === "danger" ? "bg-danger text-bg" : "bg-accent text-white"}`}
         >
           {confirmLabel}
         </button>

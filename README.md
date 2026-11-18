@@ -19,6 +19,7 @@ Primera versión (MVP):
 - Diseño adaptado: barra lateral en escritorio; en móvil, navegación inferior y botón flotante para añadir
 - Identidad propia: logo, tipografía Outfit, magenta en Personal y azul marino en Laboral, modo claro y oscuro
 - Cuenta de usuario y sincronización entre dispositivos con Supabase (obligatorio: sin configurar, la app no arranca)
+- **Lista de la compra compartida** en `/compra`: se crea la lista de casa, se invita a la familia con un enlace (caduca en 7 días) y los cambios se ven al momento en todos los móviles. Cantidad y nota opcionales, aviso si algo ya está en la lista, y «Terminar compra» quita lo que ya está en el carro
 
 ## Próximos pasos
 
@@ -38,7 +39,7 @@ Abre http://localhost:3000.
 
 ### Base de datos (Supabase)
 
-1. Ejecuta `supabase/schema.sql` en el SQL Editor del proyecto de Supabase (crea las tablas `tasks` y `projects` con seguridad por filas). Se puede volver a ejecutar sin perder datos cuando cambie.
+1. Ejecuta `supabase/schema.sql` en el SQL Editor del proyecto de Supabase (crea las tablas de tareas, proyectos y la compra compartida, con seguridad por filas y tiempo real). Se puede volver a ejecutar sin perder datos cuando cambie.
 2. Copia `.env.example` a `.env.local` y rellena la clave publicable.
 
 Al iniciar sesión por primera vez, las tareas guardadas en el navegador se suben a la cuenta.

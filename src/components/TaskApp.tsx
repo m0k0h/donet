@@ -49,6 +49,7 @@ import TaskDialog, { type TaskDraft } from "./TaskDialog";
 import ThemeToggle from "./ThemeToggle";
 import {
   CalendarIcon,
+  CartIcon,
   CheckIcon,
   ClockIcon,
   FlagIcon,
@@ -106,6 +107,23 @@ function SpaceSwitch({ space, showLabel }: { space: Space; showLabel?: boolean }
       <span className="text-muted">
         <SwapIcon size={16} />
       </span>
+    </Link>
+  );
+}
+
+// Acceso a la lista de la compra compartida. En móvil va solo el icono.
+function ShoppingLink({ showLabel }: { showLabel?: boolean }) {
+  return (
+    <Link
+      href="/compra"
+      aria-label="Lista de la compra"
+      title="Lista de la compra"
+      className={`flex min-h-11 items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink ${
+        showLabel ? "gap-3 px-3.5 text-[15px] font-medium" : "w-11 justify-center"
+      }`}
+    >
+      <CartIcon size={showLabel ? 20 : 22} />
+      {showLabel && <span className="flex-1 text-ink">Compra</span>}
     </Link>
   );
 }
@@ -406,6 +424,7 @@ function Tasks({ space }: { space: Space }) {
           })}
         </nav>
         {projectTree}
+        <ShoppingLink showLabel />
         {/* Zona de ajustes, abajo del todo */}
         <div className="mt-auto flex items-center justify-between">
           {signOut}
@@ -419,6 +438,7 @@ function Tasks({ space }: { space: Space }) {
             <Logo size={24} />
             <div className="flex items-center gap-1">
               {signOut}
+              <ShoppingLink />
               <SpaceSwitch space={space} />
             </div>
           </div>

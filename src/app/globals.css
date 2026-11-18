@@ -17,7 +17,7 @@
   --week: #6d28d9;
 }
 
-/* Cada espacio tiene su color: magenta en Personal, azul marino en Laboral. */
+/* Cada espacio tiene su color: magenta en Personal, azul marino en Laboral, verde en Compra. */
 [data-space="personal"] {
   --accent: #a21caf;
   --accent-soft: #fae8ff;
@@ -29,6 +29,12 @@
   --accent-soft: #dbeafe;
   --accent-ink: #1e3a8a;
   --mark: #1e40af;
+}
+[data-space="compra"] {
+  --accent: #047857;
+  --accent-soft: #d1fae5;
+  --accent-ink: #065f46;
+  --mark: #047857;
 }
 
 /* Modo oscuro: por defecto sigue al sistema; data-theme en <html> lo fuerza
@@ -61,6 +67,12 @@
     --accent-ink: #dbeafe;
     --mark: #93c5fd;
   }
+  :root:not([data-theme="light"]) [data-space="compra"] {
+    --accent: #059669;
+    --accent-soft: #064e3b;
+    --accent-ink: #d1fae5;
+    --mark: #6ee7b7;
+  }
 }
 :root[data-theme="dark"] {
   --bg: #111318;
@@ -88,6 +100,12 @@
   --accent-soft: #1e3a8a;
   --accent-ink: #dbeafe;
   --mark: #93c5fd;
+}
+:root[data-theme="dark"] [data-space="compra"] {
+  --accent: #059669;
+  --accent-soft: #064e3b;
+  --accent-ink: #d1fae5;
+  --mark: #6ee7b7;
 }
 
 :root[data-theme="light"] {

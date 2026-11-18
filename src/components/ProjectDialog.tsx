@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { PROJECT_COLORS, descendantProjectIds, flattenProjects, type Project, type Space } from "@/lib/tasks";
+import { descendantProjectIds, flattenProjects, type Project, type Space } from "@/lib/tasks";
+import ColorPicker from "./ColorPicker";
 import Dialog, { Select, fieldClass, labelClass } from "./Dialog";
-import { CheckIcon } from "./icons";
 
 // Crear un proyecto (solo hace falta el nombre; color y proyecto padre son opcionales)
 // o editar uno existente, que además se puede borrar.
@@ -52,30 +52,7 @@ export default function ProjectDialog({
           <input value={name} onChange={(e) => setName(e.target.value)} className={fieldClass} />
         </label>
 
-        <fieldset className="flex flex-col gap-1.5">
-          <legend className="mb-1.5 text-sm font-semibold text-ink-soft">Color</legend>
-          <div className="flex flex-wrap gap-1">
-            {PROJECT_COLORS.map((c) => (
-              <label key={c.id} title={c.label} className="grid h-11 w-11 cursor-pointer place-items-center">
-                <input
-                  type="radio"
-                  name="color"
-                  value={c.id}
-                  checked={color === c.id}
-                  onChange={() => setColor(c.id)}
-                  aria-label={c.label}
-                  className="peer sr-only"
-                />
-                <span
-                  className="grid h-7 w-7 place-items-center rounded-full text-white ring-offset-2 ring-offset-bg peer-checked:ring-2 peer-checked:ring-ink peer-focus-visible:outline-2 peer-focus-visible:outline-offset-4 peer-focus-visible:outline-ink"
-                  style={{ background: c.hex }}
-                >
-                  {color === c.id && <CheckIcon size={14} />}
-                </span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
+        <ColorPicker value={color} onChange={setColor} />
 
         <label className={labelClass}>
           Dentro de

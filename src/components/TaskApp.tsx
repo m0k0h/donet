@@ -18,6 +18,7 @@ import {
   spacePath,
   tasksIn,
   todayISO,
+  type Comment,
   type Priority,
   type Project,
   type Selection,
@@ -25,10 +26,13 @@ import {
   type Task,
 } from "@/lib/tasks";
 import {
+  deleteComment,
   deleteProject,
   deleteTask,
+  fetchComments,
   fetchProjects,
   fetchTasks,
+  insertComment,
   insertProject,
   insertTasks,
   setTaskDone,
@@ -37,6 +41,7 @@ import {
   updateTask,
 } from "@/lib/supabase";
 import AuthScreen from "./AuthScreen";
+import CommentsDialog from "./CommentsDialog";
 import ConfirmDialog from "./ConfirmDialog";
 import { DetectedDateChip, useDetectedDate } from "./DetectedDate";
 import { EmptyFilter } from "./EmptyFilter";
@@ -51,6 +56,7 @@ import {
   CalendarIcon,
   CheckIcon,
   ClockIcon,
+  CommentIcon,
   FlagIcon,
   FolderIcon,
   PencilIcon,
@@ -125,6 +131,9 @@ function descendantIds(all: Task[], id: string): string[] {
 function Tasks({ space }: { space: Space }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
+  // Tarea cuyos comentarios están abiertos.
+  const [commentsTaskId, setCommentsTaskId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [selection, setSelection] = useState<Selection>(INBOX);
   const [title, setTitle] = useState("");
@@ -154,6 +163,7 @@ function Tasks({ space }: { space: Space }) {
     if (!userId) {
       setTasks([]);
       setProjects([]);
+      setComments([]);
       setLoaded(false);
       return;
     }
@@ -169,6 +179,10 @@ function Tasks({ space }: { space: Space }) {
         setTasks(remoteTasks);
         setProjects(remoteProjects);
         setSyncError("");
+        // Los comentarios van aparte: si la tabla aún no existe, las tareas se ven igual.
+        fetchComments()
+          .then((c) => !cancelled && setComments(c))
+          .catch(() => {});
       } catch {
         if (!cancelled) setSyncError("No se han podido cargar las tareas. Comprueba la conexión.");
       }
@@ -187,6 +201,7 @@ function Tasks({ space }: { space: Space }) {
         const [remoteTasks, remoteProjects] = await Promise.all([fetchTasks(), fetchProjects()]);
         setTasks(remoteTasks);
         setProjects(remoteProjects);
+        setComments(await fetchComments());
       } catch {}
     });
   }
@@ -341,12 +356,31 @@ function Tasks({ space }: { space: Space }) {
 
   // Al borrar una tarea se van también sus subtareas (la base de datos hace lo mismo).
   function remove(id: string) {
-    setTasks((prev) => {
-      const gone = new Set([id, ...descendantIds(prev, id)]);
-      return prev.filter((t) => !gone.has(t.id));
-    });
+    const gone = new Set([id, ...descendantIds(tasks, id)]);
+    setTasks((prev) => prev.filter((t) => !gone.has(t.id)));
+    setComments((prev) => prev.filter((c) => !gone.has(c.taskId)));
     sync(deleteTask(id));
   }
+
+  function addComment(taskId: string, body: string) {
+    const comment: Comment = { id: crypto.randomUUID(), taskId, body, createdAt: Date.now() };
+    setComments((prev) => [...prev, comment]);
+    sync(insertComment(comment));
+  }
+
+  function askRemoveComment(c: Comment) {
+    setConfirm({
+      title: "Borrar comentario",
+      message: "¿Borrar este comentario? No se puede deshacer.",
+      onConfirm: () => {
+        setComments((prev) => prev.filter((x) => x.id !== c.id));
+        sync(deleteComment(c.id));
+      },
+    });
+  }
+
+  const commentCount = (taskId: string) => comments.filter((c) => c.taskId === taskId).length;
+  const commentsTask = tasks.find((t) => t.id === commentsTaskId);
 
   if (userId === undefined) return <div className="min-h-dvh" />;
   if (!userId) return <AuthScreen />;
@@ -515,6 +549,8 @@ function Tasks({ space }: { space: Space }) {
                 onEdit={setEditingTask}
                 onRemove={askRemoveTask}
                 onAddSubtask={addSubtask}
+                commentCount={commentCount}
+                onComments={(t) => setCommentsTaskId(t.id)}
               />
             ))}
           </ul>
@@ -597,6 +633,16 @@ function Tasks({ space }: { space: Space }) {
         />
       )}
 
+      {commentsTask && (
+        <CommentsDialog
+          task={commentsTask}
+          comments={comments.filter((c) => c.taskId === commentsTask.id)}
+          onAdd={(body) => addComment(commentsTask.id, body)}
+          onRemove={askRemoveComment}
+          onClose={() => setCommentsTaskId(null)}
+        />
+      )}
+
       {confirm && (
         <ConfirmDialog
           title={confirm.title}
@@ -640,6 +686,8 @@ function TaskRow({
   onEdit,
   onRemove,
   onAddSubtask,
+  commentCount,
+  onComments,
 }: {
   task: Task;
   depth: number;
@@ -653,6 +701,8 @@ function TaskRow({
   onEdit: (t: Task) => void;
   onRemove: (id: string) => void;
   onAddSubtask: (parent: Task, title: string, due?: string, dueTime?: string) => void;
+  commentCount: (taskId: string) => number;
+  onComments: (t: Task) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const subForm = useRef<HTMLFormElement>(null);
@@ -691,7 +741,8 @@ function TaskRow({
   const showDue = !t.done && !!t.due;
   const onlyTime = showDue && hideToday && t.due === today && !overdue;
   const showPriority = !t.done && t.priority < 4;
-  const showMeta = t.done || (showDue && (!onlyTime || !!t.dueTime)) || showPriority || !!context;
+  const nComments = commentCount(t.id);
+  const showMeta = t.done || (showDue && (!onlyTime || !!t.dueTime)) || showPriority || nComments > 0 || !!context;
 
   return (
     <li className="flex flex-col">
@@ -749,6 +800,19 @@ function TaskRow({
                   <FlagIcon size={13} />P{t.priority}
                 </span>
               )}
+              {nComments > 0 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onComments(t);
+                  }}
+                  aria-label={`${nComments === 1 ? "1 comentario" : `${nComments} comentarios`}: ${t.title}`}
+                  className="inline-flex items-center gap-1 rounded font-medium text-muted hover:text-ink"
+                >
+                  <CommentIcon size={13} />
+                  {nComments}
+                </button>
+              )}
               {context && (
                 <span className="ml-auto inline-flex min-w-0 max-w-full items-center gap-1.5 text-muted">
                   {context.parent && (
@@ -790,6 +854,14 @@ function TaskRow({
           </button>
         )}
         <button
+          onClick={() => onComments(t)}
+          aria-label={`Comentarios de: ${t.title}`}
+          title="Comentarios"
+          className="grid h-11 w-11 shrink-0 place-items-center text-muted hover:text-ink md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
+        >
+          <CommentIcon size={18} />
+        </button>
+        <button
           onClick={() => onRemove(t.id)}
           aria-label={`Eliminar: ${t.title}`}
           className="grid h-11 w-11 shrink-0 place-items-center text-muted hover:text-danger md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
@@ -812,6 +884,8 @@ function TaskRow({
               onEdit={onEdit}
               onRemove={onRemove}
               onAddSubtask={onAddSubtask}
+              commentCount={commentCount}
+              onComments={onComments}
             />
           ))}
         </ul>

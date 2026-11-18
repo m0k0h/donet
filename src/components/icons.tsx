@@ -187,3 +187,24 @@ export const ProgressPie = ({ size = 13, value }: P & { value: number }) => {
     </svg>
   );
 };
+
+export const CartIcon = ({ size }: P) => (
+  <Icon size={size}>
+    <path d="M3 4h2l2.4 11h10.2L20 8H6.2" />
+    <circle cx="9" cy="19.5" r="1.5" />
+    <circle cx="17" cy="19.5" r="1.5" />
+  </Icon>
+);
+
+export const UserPlusIcon = ({ size }: P) => (
+  <Icon size={size}>
+    <circle cx="9" cy="8" r="3.5" />
+    <path d="M2.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6" />
+  </Icon>
+);
+
+export const BackIcon = ({ size }: P) => (
+  <Icon size={size}>
+    <path d="M15 5l-7 7 7 7" />
+  </Icon>
+);

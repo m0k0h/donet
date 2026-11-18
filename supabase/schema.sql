@@ -103,3 +103,59 @@ create policy "task_comments_insert_own" on public.task_comments
 drop policy if exists "task_comments_delete_own" on public.task_comments;
 create policy "task_comments_delete_own" on public.task_comments
   for delete to authenticated using ((select auth.uid()) = user_id);
+
+-- Etiquetas: cada sección tiene las suyas y el nombre no se repite (sin distinguir mayúsculas).
+create table if not exists public.labels (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  space text not null default 'personal' check (space in ('personal', 'work')),
+  name text not null,
+  color text not null default 'gray',
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists labels_user_space_name_idx on public.labels (user_id, space, lower(name));
+
+alter table public.labels enable row level security;
+
+drop policy if exists "labels_select_own" on public.labels;
+create policy "labels_select_own" on public.labels
+  for select to authenticated using ((select auth.uid()) = user_id);
+
+drop policy if exists "labels_insert_own" on public.labels;
+create policy "labels_insert_own" on public.labels
+  for insert to authenticated with check ((select auth.uid()) = user_id);
+
+drop policy if exists "labels_update_own" on public.labels;
+create policy "labels_update_own" on public.labels
+  for update to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists "labels_delete_own" on public.labels;
+create policy "labels_delete_own" on public.labels
+  for delete to authenticated using ((select auth.uid()) = user_id);
+
+-- Qué etiquetas lleva cada tarea. Borrar la tarea o la etiqueta quita la relación.
+create table if not exists public.task_labels (
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  task_id uuid not null references public.tasks (id) on delete cascade,
+  label_id uuid not null references public.labels (id) on delete cascade,
+  primary key (task_id, label_id)
+);
+
+create index if not exists task_labels_label_id_idx on public.task_labels (label_id);
+
+alter table public.task_labels enable row level security;
+
+drop policy if exists "task_labels_select_own" on public.task_labels;
+create policy "task_labels_select_own" on public.task_labels
+  for select to authenticated using ((select auth.uid()) = user_id);
+
+drop policy if exists "task_labels_insert_own" on public.task_labels;
+create policy "task_labels_insert_own" on public.task_labels
+  for insert to authenticated with check ((select auth.uid()) = user_id);
+
+drop policy if exists "task_labels_delete_own" on public.task_labels;
+create policy "task_labels_delete_own" on public.task_labels
+  for delete to authenticated using ((select auth.uid()) = user_id);

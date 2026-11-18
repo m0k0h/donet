@@ -1346,7 +1346,7 @@ function TaskRow({
                 <LabelTag key={l.id} label={l} />
               ))}
               {context && (
-                <span className="ml-auto inline-flex min-w-0 max-w-full items-center gap-1.5 text-muted">
+                <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-muted">
                   {context.parent && (
                     <>
                       <SubtaskIcon size={13} />

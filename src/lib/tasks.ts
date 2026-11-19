@@ -24,6 +24,7 @@ export type Task = {
   createdAt: number;
   completedAt?: number; // cuándo se completó (las antiguas no lo tienen)
   showDoneSubtasks?: boolean; // muestra sus subtareas completadas (por defecto, ocultas)
+  collapsed?: boolean; // sus subtareas están plegadas en la lista
 };
 
 // Comentario de una tarea: solo texto, en orden de llegada.

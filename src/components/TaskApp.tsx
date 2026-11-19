@@ -47,6 +47,7 @@ import {
   insertLabels,
   insertProject,
   insertTasks,
+  setCollapsed,
   setShowDoneSubtasks,
   setTaskLabels,
   setTasksDone,
@@ -76,6 +77,7 @@ import {
   CalendarIcon,
   CartIcon,
   CheckIcon,
+  ChevronIcon,
   ClockIcon,
   CommentIcon,
   EyeIcon,
@@ -491,6 +493,8 @@ function Tasks({ space }: { space: Space }) {
   // A una tarea completada no se le añaden subtareas.
   function addSubtask(parent: Task, text: string, due?: string, dueTime?: string, labelNames: string[] = []) {
     if (parent.done) return;
+    // La subtarea nueva tiene que verse: si la madre estaba plegada, se despliega.
+    if (parent.collapsed) toggleCollapsed(parent);
     createTask({ space: parent.space, projectId: parent.projectId, parentId: parent.id, title: text, due, dueTime, priority: 4, labels: labelNames });
   }
 
@@ -592,6 +596,12 @@ function Tasks({ space }: { space: Space }) {
     const set = new Set(toReopen);
     setTasks((prev) => prev.map((t) => (set.has(t.id) ? { ...t, done: false, completedAt: undefined } : t)));
     sync(setTasksDone(toReopen, false));
+  }
+  // Plegar o desplegar las subtareas de una tarea (se guarda en la tarea).
+  function toggleCollapsed(task: Task) {
+    const collapsed = !task.collapsed;
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, collapsed } : t)));
+    sync(setCollapsed(task.id, collapsed));
   }
   // Mostrar u ocultar las subtareas completadas de una tarea (se guarda en la tarea).
   function toggleShowDoneSubtasks(task: Task) {
@@ -1000,6 +1010,7 @@ function Tasks({ space }: { space: Space }) {
                     onComments={(t) => setCommentsTaskId(t.id)}
                     progressOf={progressOf}
                     onToggleShowDone={toggleShowDoneSubtasks}
+                    onToggleCollapsed={toggleCollapsed}
                     labelsOf={labelsOf}
                     spaceLabels={spaceLabels}
                   />
@@ -1028,6 +1039,7 @@ function Tasks({ space }: { space: Space }) {
                         tree={tree}
                         context={tree ? undefined : flatContext(t)}
                         onToggleShowDone={toggleShowDoneSubtasks}
+                    onToggleCollapsed={toggleCollapsed}
                         {...rowProps}
                       />
                     ))}
@@ -1220,6 +1232,7 @@ function TaskRow({
   onComments,
   progressOf,
   onToggleShowDone,
+  onToggleCollapsed,
   labelsOf,
   spaceLabels,
 }: {
@@ -1240,6 +1253,8 @@ function TaskRow({
   progressOf: (id: string) => { done: number; total: number };
   // Solo en árbol: mostrar u ocultar las subtareas completadas de esta tarea.
   onToggleShowDone?: (t: Task) => void;
+  // Solo en árbol: plegar o desplegar las subtareas de esta tarea.
+  onToggleCollapsed?: (t: Task) => void;
   labelsOf: (taskId: string) => Label[];
   spaceLabels: Label[];
 }) {
@@ -1286,6 +1301,9 @@ function TaskRow({
   const progress = progressOf(t.id);
   // No se puede completar mientras le queden subtareas pendientes.
   const blocked = !t.done && progress.done < progress.total;
+  // En árbol, el contador de subtareas pliega y despliega sus subtareas.
+  const collapsible = tree && !!onToggleCollapsed && progress.total > 0;
+  const collapsed = collapsible && !!t.collapsed;
   const showMeta =
     (showDue && (!onlyTime || !!t.dueTime)) || showPriority || progress.total > 0 || nComments > 0 || taskLabels.length > 0 || !!context;
 
@@ -1346,17 +1364,35 @@ function TaskRow({
                   <FlagIcon size={13} />P{t.priority}
                 </span>
               )}
-              {progress.total > 0 && (
-                <span
-                  className={`inline-flex items-center gap-1 font-medium ${
-                    progress.done === progress.total ? "text-green" : "text-muted"
-                  }`}
-                  aria-label={`${progress.done} de ${progress.total} subtareas completadas`}
-                >
-                  <ProgressPie size={13} value={progress.done / progress.total} />
-                  {progress.done}/{progress.total}
-                </span>
-              )}
+              {progress.total > 0 &&
+                (collapsible ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleCollapsed!(t);
+                    }}
+                    aria-expanded={!collapsed}
+                    aria-label={`${collapsed ? "Desplegar" : "Plegar"} subtareas (${progress.done} de ${progress.total} completadas): ${t.title}`}
+                    title={collapsed ? "Desplegar subtareas" : "Plegar subtareas"}
+                    className={`-mx-1 inline-flex items-center gap-1 rounded px-1 font-medium hover:bg-track ${
+                      progress.done === progress.total ? "text-green" : "text-muted hover:text-ink"
+                    }`}
+                  >
+                    <ProgressPie size={13} value={progress.done / progress.total} />
+                    {progress.done}/{progress.total}
+                    <ChevronIcon size={12} open={!collapsed} />
+                  </button>
+                ) : (
+                  <span
+                    className={`inline-flex items-center gap-1 font-medium ${
+                      progress.done === progress.total ? "text-green" : "text-muted"
+                    }`}
+                    aria-label={`${progress.done} de ${progress.total} subtareas completadas`}
+                  >
+                    <ProgressPie size={13} value={progress.done / progress.total} />
+                    {progress.done}/{progress.total}
+                  </span>
+                ))}
               {nComments > 0 && (
                 <button
                   onClick={(e) => {
@@ -1431,7 +1467,7 @@ function TaskRow({
         </button>
       </div>
 
-      {children.length > 0 && (
+      {!collapsed && children.length > 0 && (
         <ul className="flex flex-col">
           {children.map((c) => (
             <TaskRow
@@ -1449,6 +1485,7 @@ function TaskRow({
               onComments={onComments}
               progressOf={progressOf}
               onToggleShowDone={onToggleShowDone}
+              onToggleCollapsed={onToggleCollapsed}
               labelsOf={labelsOf}
               spaceLabels={spaceLabels}
             />
@@ -1456,7 +1493,7 @@ function TaskRow({
         </ul>
       )}
 
-      {tree && onToggleShowDone && progress.done > 0 && (
+      {tree && !collapsed && onToggleShowDone && progress.done > 0 && (
         <div style={{ paddingLeft: (depth + 1) * 28 + 4 }}>
           <button
             onClick={() => onToggleShowDone(t)}

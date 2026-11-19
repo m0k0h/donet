@@ -115,25 +115,6 @@
   color-scheme: dark;
 }
 
-/* Icono del botón de tema: luna en claro (lleva a oscuro), sol en oscuro. */
-.theme-icon-dark {
-  display: none;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .theme-icon-light {
-    display: none;
-  }
-  :root:not([data-theme="light"]) .theme-icon-dark {
-    display: inline;
-  }
-}
-:root[data-theme="dark"] .theme-icon-light {
-  display: none;
-}
-:root[data-theme="dark"] .theme-icon-dark {
-  display: inline;
-}
-
 @theme inline {
   --color-bg: var(--bg);
   --color-sunk: var(--sunk);

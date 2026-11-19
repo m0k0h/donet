@@ -24,7 +24,7 @@ export default function PageHeader({
   aside?: ReactNode;
 }) {
   return (
-    <header className="flex flex-col gap-2">
+    <header className="flex flex-col gap-1">
       <div className="flex items-center gap-3">
         {leading}
         <h1 className="min-w-0 flex-1 break-words text-[30px] font-extrabold leading-tight tracking-[-0.02em] md:text-[34px]">

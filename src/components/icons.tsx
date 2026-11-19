@@ -216,6 +216,13 @@ export const GearIcon = ({ size }: P) => (
   </Icon>
 );
 
+// «⋯»: abre las acciones de una tarea en el móvil.
+export const DotsIcon = ({ size }: P) => (
+  <Icon size={size} strokeWidth={2.6}>
+    <path d="M5 12h.01M12 12h.01M19 12h.01" />
+  </Icon>
+);
+
 // «Más», en la barra de abajo del móvil.
 export const MoreIcon = ({ size }: P) => (
   <Icon size={size}>

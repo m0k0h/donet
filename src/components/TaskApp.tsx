@@ -10,6 +10,7 @@ import {
   isOverdue,
   doneThisWeek,
   groupByCompletion,
+  dayLabel,
   groupByDue,
   isTree,
   loadLegacyTasks,
@@ -57,6 +58,9 @@ import {
   updateTask,
 } from "@/lib/supabase";
 import { consumeOpenShopping, loadPendingInvite } from "@/lib/shopping";
+import { consumeReopenSettings } from "@/lib/google";
+import { EVENT_DAYS, EventList, eventsByDay, useCalendarEvents } from "./CalendarEvents";
+import { GoogleCalendarsSettings } from "./GoogleCalendars";
 import AuthScreen from "./AuthScreen";
 import CommentsDialog from "./CommentsDialog";
 import ConfirmDialog from "./ConfirmDialog";
@@ -277,10 +281,14 @@ function Tasks({ space }: { space: Space }) {
   // Completadas desplegadas al final de la lista; se vuelven a plegar al cambiar de lista.
   const [showDoneHere, setShowDoneHere] = useState(false);
   const shop = useShopping(userId);
+  // Eventos de los calendarios de Google elegidos en Ajustes.
+  const calendar = useCalendarEvents(userId);
 
   // Se llega a la Compra desde /compra o con una invitación pendiente.
   useEffect(() => {
     if (consumeOpenShopping() || loadPendingInvite()) setShopping(true);
+    // Al volver de conectar una cuenta de Google, Ajustes sigue abierto.
+    if (consumeReopenSettings()) setSettings(true);
   }, []);
 
   // Al cambiar de sección se cierra la Compra (en Laboral no tiene entrada en la barra lateral).
@@ -418,6 +426,30 @@ function Tasks({ space }: { space: Space }) {
           .filter((t) => isRoot(t) && t.done && !justDone.has(t.id))
           .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
   const doneHere = doneRoots.length;
+
+  // Eventos de calendario de esta sección, por día. Hoy los muestra encima de las tareas;
+  // Próximo y Próximos (móvil) los mezclan con las tareas en grupos por día.
+  const eventDays = eventsByDay(calendar.events, space);
+  const lastEventDay = (() => {
+    const d = new Date(today + "T00:00");
+    d.setDate(d.getDate() + EVENT_DAYS);
+    return d.toLocaleDateString("sv-SE");
+  })();
+  const todayEvents = sel.kind === "view" && sel.view === "today" ? (eventDays.get(today) ?? []) : [];
+  const dayView = sel.kind === "view" && (sel.view === "agenda" || sel.view === "upcoming");
+  const dayGroups = dayView
+    ? (() => {
+        const groups = new Map(groupByDue(roots, today).map((g) => [g.key, g]));
+        for (const day of eventDays.keys()) {
+          if (day > lastEventDay || day < today || (sel.view === "upcoming" && day === today)) continue;
+          if (!groups.has(day)) groups.set(day, { key: day, label: dayLabel(day, today), tasks: [] });
+        }
+        return [...groups.values()]
+          .sort((a, b) => a.key.localeCompare(b.key))
+          .map((g) => ({ ...g, events: eventDays.get(g.key) ?? [] }));
+      })()
+    : [];
+  const viewHasEvents = todayEvents.length > 0 || dayGroups.some((g) => g.events.length > 0);
 
   const pendingIn = (s: Selection) => tasksIn(tasks, space, s, taskLabels).filter((t) => !t.done).length;
   const count = list.filter((t) => !t.done).length;
@@ -735,7 +767,6 @@ function Tasks({ space }: { space: Space }) {
           ? "Próximos"
           : VIEWS.find((v) => sel.kind === "view" && v.id === sel.view)!.label;
   const weekDone = doneView ? doneThisWeek(list) : 0;
-  const agenda = sel.kind === "view" && sel.view === "agenda";
   // Próximos (móvil) también se ve activo si se llegó a Hoy o Próximo desde escritorio.
   const datesActive = !offScreen && sel.kind === "view" && sel.view !== "inbox";
   const inboxActive = !offScreen && sel.kind === "view" && sel.view === "inbox";
@@ -933,7 +964,7 @@ function Tasks({ space }: { space: Space }) {
               </form>
             )}
 
-            {loaded && !doneView && roots.length === 0 && (
+            {loaded && !doneView && roots.length === 0 && !viewHasEvents && (
               sel.kind === "view" && sel.view !== "inbox" ? (
                 <EmptyFilter view={sel.view} />
               ) : sel.kind === "view" ? (
@@ -982,13 +1013,15 @@ function Tasks({ space }: { space: Space }) {
                   </ul>
                 </section>
               ))
-            ) : agenda ? (
-              // Próximos (móvil): Hoy, con lo vencido, y después día a día.
-              groupByDue(roots, today).map((g) => (
+            ) : dayView ? (
+              // Próximo y Próximos (móvil, con Hoy y lo vencido): día a día, eventos y tareas.
+              dayGroups.map((g) => (
                 <section key={g.key} className="flex flex-col gap-1">
                   <h2 className="text-sm font-bold text-muted first-letter:uppercase">
-                    {g.label} · {g.tasks.length}
+                    {g.label}
+                    {g.tasks.length > 0 && ` · ${g.tasks.length}`}
                   </h2>
+                  <EventList events={g.events} day={g.key} />
                   <ul className="flex flex-col">
                     {g.tasks.map((t) => (
                       <TaskRow
@@ -1005,6 +1038,9 @@ function Tasks({ space }: { space: Space }) {
                 </section>
               ))
             ) : (
+              <>
+              {/* Hoy: los eventos del día, encima de las tareas. */}
+              <EventList events={todayEvents} day={today} />
               <ul className="flex flex-col">
                 {roots.map((t) => (
                   <TaskRow
@@ -1034,6 +1070,7 @@ function Tasks({ space }: { space: Space }) {
                   />
                 ))}
               </ul>
+              </>
             )}
 
             {/* Lo completado de esta lista se despliega aquí mismo, como las subtareas completadas. */}
@@ -1142,6 +1179,7 @@ function Tasks({ space }: { space: Space }) {
             <h3 className="text-[13px] font-bold uppercase tracking-wide text-muted">Tema</h3>
             <ThemeChoice />
           </section>
+          <GoogleCalendarsSettings onChange={calendar.reload} />
           {/* La cuenta ya se ve en la tarjeta que abre Ajustes: aquí solo hace falta salir. */}
           <section className="flex flex-col gap-2">
             <button

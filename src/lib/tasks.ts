@@ -176,6 +176,16 @@ export function groupByCompletion(done: Task[], today: string): { label: string;
   }));
 }
 
+// Nombre de un día en las agendas: «Hoy», «Mañana» o «viernes, 20 nov».
+export function dayLabel(day: string, today: string) {
+  const days = Math.round((Date.parse(day) - Date.parse(today)) / 86400000);
+  return days === 0
+    ? "Hoy"
+    : days === 1
+      ? "Mañana"
+      : new Date(day + "T00:00").toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "short" });
+}
+
 // Agenda (Hoy + Próximo): primero «Hoy», con lo vencido; después un grupo por día.
 export function groupByDue(list: Task[], today: string): { key: string; label: string; tasks: Task[] }[] {
   const groups = new Map<string, Task[]>();
@@ -185,22 +195,9 @@ export function groupByDue(list: Task[], today: string): { key: string; label: s
   }
   return [...groups]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([day, tasks]) => {
-      const days = Math.round((Date.parse(day) - Date.parse(today)) / 86400000);
-      return {
-        key: day,
-        label:
-          days === 0
-            ? "Hoy"
-            : days === 1
-              ? "Mañana"
-              : new Date(day + "T00:00").toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "short" }),
-        tasks,
-      };
-    });
+    .map(([day, tasks]) => ({ key: day, label: dayLabel(day, today), tasks }));
 }
 
-// Cuántas se han completado desde el lunes de esta semana.
 export function doneThisWeek(done: Task[]) {
   const monday = new Date();
   monday.setHours(0, 0, 0, 0);

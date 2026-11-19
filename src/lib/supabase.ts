@@ -23,6 +23,7 @@ type Row = {
   created_at: string;
   completed_at?: string | null;
   show_done_subtasks?: boolean;
+  collapsed?: boolean;
 };
 
 // Todas las columnas: así la app sigue cargando aunque falte alguna columna nueva por crear.
@@ -56,6 +57,7 @@ const fromRow = (r: Row): Task => ({
   createdAt: Date.parse(r.created_at),
   completedAt: r.completed_at ? Date.parse(r.completed_at) : undefined,
   showDoneSubtasks: r.show_done_subtasks ?? false,
+  collapsed: r.collapsed ?? false,
 });
 
 export async function fetchTasks(): Promise<Task[]> {
@@ -79,6 +81,11 @@ export async function setTasksDone(ids: string[], done: boolean, at?: number) {
     .from("tasks")
     .update({ done, completed_at: done ? new Date(at ?? Date.now()).toISOString() : null })
     .in("id", ids);
+  if (error) throw error;
+}
+
+export async function setCollapsed(id: string, collapsed: boolean) {
+  const { error } = await supabase!.from("tasks").update({ collapsed }).eq("id", id);
   if (error) throw error;
 }
 

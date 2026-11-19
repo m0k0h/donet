@@ -168,6 +168,9 @@ alter table public.tasks add column if not exists completed_at timestamptz;
 -- Sustituye a hide_done_subtasks, que ya no se usa.
 alter table public.tasks add column if not exists show_done_subtasks boolean not null default false;
 
+-- Si una tarea tiene sus subtareas plegadas en la lista (se elige en cada tarea).
+alter table public.tasks add column if not exists collapsed boolean not null default false;
+
 -- ─── Compra compartida ──────────────────────────────────────────────────────
 -- Un hogar agrupa a varias personas que comparten la lista de la compra.
 -- Crear un hogar y unirse a uno se hace con funciones (más abajo), no con

@@ -20,6 +20,7 @@ Primera versión (MVP):
 - Identidad propia: logo, tipografía Outfit, magenta en Personal y azul marino en Laboral, modo claro y oscuro
 - Cuenta de usuario y sincronización entre dispositivos con Supabase (obligatorio: sin configurar, la app no arranca)
 - **Listas de la compra**, integradas en la app (destacadas antes de Proyectos y en la barra inferior del móvil, con el número de cosas por comprar). Todo el mundo empieza con «Mi lista»; al compartirla con un enlace (caduca en 7 días) pasa a llamarse «Compartida» («Compartida 2»…) y cualquiera puede renombrarla. Se puede tener varias, crear otra «Mi lista» y salir de una. Los cambios se ven al momento en todos los móviles; cantidad y nota opcionales, aviso si algo ya está en la lista, y «Terminar compra» quita lo que ya está en el carro
+- **Calendarios de Google** (solo lectura): en Ajustes se conectan una o varias cuentas de Google y, de cada calendario, se elige si sus eventos se ven en Personal, en Laboral o en las dos. Los eventos salen en **Hoy** (encima de las tareas) y en **Próximo** (que ahora va día a día, con eventos y tareas juntos, durante los próximos 30 días). Pulsar un evento lo abre en Google Calendar
 
 ## Próximos pasos
 
@@ -43,5 +44,21 @@ Abre http://localhost:3000.
 2. Copia `.env.example` a `.env.local` y rellena la clave publicable.
 
 Al iniciar sesión por primera vez, las tareas guardadas en el navegador se suben a la cuenta.
+
+### Calendarios de Google
+
+doneT es una web estática, así que el intercambio de permisos con Google lo hace Supabase (funciones de `supabase/schema.sql` con la extensión `http`). El secreto de Google y los permisos de cada cuenta se quedan en la base de datos; el navegador solo recibe tokens de una hora para leer los calendarios.
+
+1. En [Google Cloud Console](https://console.cloud.google.com/), crea un proyecto y activa la **Google Calendar API** (APIs y servicios → Biblioteca).
+2. Pantalla de consentimiento OAuth (Google Auth Platform): tipo **Externo**, añade el permiso `.../auth/calendar.readonly` y **publica la app** («En producción»). En «Prueba», Google retira el permiso a los 7 días y habría que reconectar las cuentas cada semana. Como no está verificada, al conectar Google avisa de que la app no está verificada: «Configuración avanzada» → «Ir a doneT».
+3. Clientes → Crear cliente → **Aplicación web**, con estas URI de redirección autorizadas:
+   - `https://m0k0h.github.io/donet/google/`
+   - `http://localhost:3000/google/`, `http://localhost:3001/google/`, `http://localhost:3002/google/` y `http://localhost:3003/google/` (main y worktrees)
+4. Ejecuta `supabase/schema.sql` de nuevo y guarda el cliente en Vault (SQL Editor):
+   ```sql
+   select vault.create_secret('<ID de cliente>', 'google_client_id');
+   select vault.create_secret('<secreto de cliente>', 'google_client_secret');
+   ```
+5. En doneT: Ajustes → **Añadir cuenta de Google**, y marca en cada calendario las secciones donde quieres verlo.
 
 Stack: Next.js · TypeScript · Tailwind CSS

@@ -443,3 +443,283 @@ begin
   end if;
 end;
 $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Calendarios de Google (solo lectura).
+--
+-- doneT es una web estática: el intercambio de códigos y la renovación de los
+-- permisos de Google se hacen aquí, en la base de datos, con la extensión http.
+-- El secreto del cliente OAuth y los tokens de cada cuenta nunca llegan al
+-- navegador: solo un token de acceso de una hora para leer los calendarios.
+--
+-- Configuración (una vez), en el SQL Editor, con los datos del cliente OAuth:
+--   select vault.create_secret('<ID de cliente>', 'google_client_id');
+--   select vault.create_secret('<secreto de cliente>', 'google_client_secret');
+-- ─────────────────────────────────────────────────────────────────────────────
+
+create extension if not exists http with schema extensions;
+
+-- Cuentas de Google conectadas. needs_reauth: Google ha retirado el permiso y
+-- hay que volver a conectarla.
+create table if not exists public.google_accounts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  email text not null,
+  needs_reauth boolean not null default false,
+  created_at timestamptz not null default now(),
+  unique (user_id, email)
+);
+
+alter table public.google_accounts enable row level security;
+
+drop policy if exists "google_accounts_select_own" on public.google_accounts;
+create policy "google_accounts_select_own" on public.google_accounts
+  for select to authenticated using ((select auth.uid()) = user_id);
+
+-- Las cuentas se crean y se quitan con google_connect y google_disconnect.
+
+-- Tokens de cada cuenta: sin políticas, así que solo los leen las funciones de abajo.
+create table if not exists public.google_tokens (
+  account_id uuid primary key references public.google_accounts (id) on delete cascade,
+  refresh_token text not null,
+  access_token text,
+  expires_at timestamptz
+);
+
+alter table public.google_tokens enable row level security;
+revoke all on public.google_tokens from anon, authenticated;
+
+-- Calendarios de cada cuenta y en qué secciones se ven sus eventos (vacío = en ninguna).
+create table if not exists public.google_calendars (
+  account_id uuid not null references public.google_accounts (id) on delete cascade,
+  calendar_id text not null,
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  name text not null,
+  color text not null default '#8b919c',
+  spaces text[] not null default '{}',
+  primary key (account_id, calendar_id)
+);
+
+create index if not exists google_calendars_user_id_idx on public.google_calendars (user_id);
+
+alter table public.google_calendars enable row level security;
+
+drop policy if exists "google_calendars_select_own" on public.google_calendars;
+create policy "google_calendars_select_own" on public.google_calendars
+  for select to authenticated using ((select auth.uid()) = user_id);
+
+drop policy if exists "google_calendars_insert_own" on public.google_calendars;
+create policy "google_calendars_insert_own" on public.google_calendars
+  for insert to authenticated with check (
+    (select auth.uid()) = user_id
+    and exists (select 1 from public.google_accounts a where a.id = account_id and a.user_id = (select auth.uid()))
+  );
+
+drop policy if exists "google_calendars_update_own" on public.google_calendars;
+create policy "google_calendars_update_own" on public.google_calendars
+  for update to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists "google_calendars_delete_own" on public.google_calendars;
+create policy "google_calendars_delete_own" on public.google_calendars
+  for delete to authenticated using ((select auth.uid()) = user_id);
+
+-- Un secreto guardado en Vault (o null si no está).
+create or replace function public.google_secret(secret_name text)
+returns text
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select decrypted_secret from vault.decrypted_secrets where name = secret_name limit 1;
+$$;
+
+revoke execute on function public.google_secret(text) from public, anon, authenticated;
+
+-- El ID de cliente es público (va en la dirección de Google); null = sin configurar.
+create or replace function public.google_client_id()
+returns text
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select public.google_secret('google_client_id');
+$$;
+
+-- Cambia el código que devuelve Google al conectar una cuenta por sus tokens y
+-- guarda la cuenta. Devuelve su id.
+create or replace function public.google_connect(code text, redirect_uri text)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := auth.uid();
+  cid text := public.google_secret('google_client_id');
+  csecret text := public.google_secret('google_client_secret');
+  res extensions.http_response;
+  tok jsonb;
+  info jsonb;
+  acc uuid;
+begin
+  if uid is null then
+    raise exception 'not_authenticated';
+  end if;
+  if cid is null or csecret is null then
+    raise exception 'google_not_configured';
+  end if;
+
+  res := extensions.http_post(
+    'https://oauth2.googleapis.com/token',
+    'grant_type=authorization_code'
+      || '&code=' || extensions.urlencode(code)
+      || '&client_id=' || extensions.urlencode(cid)
+      || '&client_secret=' || extensions.urlencode(csecret)
+      || '&redirect_uri=' || extensions.urlencode(redirect_uri),
+    'application/x-www-form-urlencoded'
+  );
+  if res.status <> 200 then
+    raise exception 'google_token_error: %', res.content;
+  end if;
+  tok := res.content::jsonb;
+
+  -- Google deja desmarcar permisos al aceptar: sin el de calendarios no sirve de nada.
+  if position('calendar' in coalesce(tok ->> 'scope', '')) = 0 then
+    raise exception 'google_missing_scope';
+  end if;
+
+  -- La cuenta (su email) sale del id_token que acompaña a los tokens.
+  res := extensions.http_get(
+    'https://oauth2.googleapis.com/tokeninfo?id_token=' || extensions.urlencode(tok ->> 'id_token')
+  );
+  if res.status <> 200 then
+    raise exception 'google_tokeninfo_error: %', res.content;
+  end if;
+  info := res.content::jsonb;
+
+  insert into public.google_accounts (user_id, email, needs_reauth)
+  values (uid, info ->> 'email', false)
+  on conflict (user_id, email) do update set needs_reauth = false
+  returning id into acc;
+
+  if tok ->> 'refresh_token' is null
+     and not exists (select 1 from public.google_tokens where account_id = acc) then
+    raise exception 'google_no_refresh_token';
+  end if;
+
+  insert into public.google_tokens (account_id, refresh_token, access_token, expires_at)
+  values (
+    acc,
+    tok ->> 'refresh_token',
+    tok ->> 'access_token',
+    now() + make_interval(secs => (tok ->> 'expires_in')::int)
+  )
+  on conflict (account_id) do update set
+    refresh_token = coalesce(excluded.refresh_token, public.google_tokens.refresh_token),
+    access_token = excluded.access_token,
+    expires_at = excluded.expires_at;
+
+  return acc;
+end;
+$$;
+
+-- Token de acceso (válido como mucho una hora) para leer los calendarios de una
+-- cuenta desde el navegador. Lo renueva si va a caducar. Si Google ya no da
+-- permiso, marca la cuenta y devuelve {"error": "reauth"}.
+create or replace function public.google_access_token(account uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  tk public.google_tokens;
+  res extensions.http_response;
+  tok jsonb;
+  new_expires timestamptz;
+begin
+  select t.* into tk
+  from public.google_tokens t
+  join public.google_accounts a on a.id = t.account_id
+  where t.account_id = google_access_token.account and a.user_id = (select auth.uid());
+  if not found then
+    raise exception 'google_account_not_found';
+  end if;
+
+  if tk.access_token is not null and tk.expires_at > now() + interval '2 minutes' then
+    return jsonb_build_object('access_token', tk.access_token, 'expires_at', tk.expires_at);
+  end if;
+
+  res := extensions.http_post(
+    'https://oauth2.googleapis.com/token',
+    'grant_type=refresh_token'
+      || '&refresh_token=' || extensions.urlencode(tk.refresh_token)
+      || '&client_id=' || extensions.urlencode(public.google_secret('google_client_id'))
+      || '&client_secret=' || extensions.urlencode(public.google_secret('google_client_secret')),
+    'application/x-www-form-urlencoded'
+  );
+  if res.status in (400, 401) then
+    update public.google_accounts set needs_reauth = true where id = tk.account_id;
+    return jsonb_build_object('error', 'reauth');
+  end if;
+  if res.status <> 200 then
+    raise exception 'google_token_error: %', res.content;
+  end if;
+  tok := res.content::jsonb;
+  new_expires := now() + make_interval(secs => (tok ->> 'expires_in')::int);
+
+  update public.google_tokens set
+    access_token = tok ->> 'access_token',
+    expires_at = new_expires,
+    refresh_token = coalesce(tok ->> 'refresh_token', refresh_token)
+  where account_id = tk.account_id;
+  update public.google_accounts set needs_reauth = false where id = tk.account_id and needs_reauth;
+
+  return jsonb_build_object('access_token', tok ->> 'access_token', 'expires_at', new_expires);
+end;
+$$;
+
+-- Quita una cuenta: retira el permiso en Google (si se puede) y borra la cuenta,
+-- sus tokens y sus calendarios.
+create or replace function public.google_disconnect(account uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  rt text;
+begin
+  select t.refresh_token into rt
+  from public.google_tokens t
+  join public.google_accounts a on a.id = t.account_id
+  where t.account_id = google_disconnect.account and a.user_id = (select auth.uid());
+
+  if rt is not null then
+    begin
+      perform extensions.http_post(
+        'https://oauth2.googleapis.com/revoke',
+        'token=' || extensions.urlencode(rt),
+        'application/x-www-form-urlencoded'
+      );
+    exception when others then
+      null; -- Si Google no responde, la cuenta se borra igual.
+    end;
+  end if;
+
+  delete from public.google_accounts where id = google_disconnect.account and user_id = (select auth.uid());
+end;
+$$;
+
+revoke execute on function public.google_client_id() from public, anon;
+revoke execute on function public.google_connect(text, text) from public, anon;
+revoke execute on function public.google_access_token(uuid) from public, anon;
+revoke execute on function public.google_disconnect(uuid) from public, anon;
+grant execute on function public.google_client_id() to authenticated;
+grant execute on function public.google_connect(text, text) to authenticated;
+grant execute on function public.google_access_token(uuid) to authenticated;
+grant execute on function public.google_disconnect(uuid) to authenticated;

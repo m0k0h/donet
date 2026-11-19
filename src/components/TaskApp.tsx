@@ -832,7 +832,7 @@ function Tasks({ space }: { space: Space }) {
             </div>
           ) : more ? (
             <>
-              <PageHeader title="Más" context={spaceLabel} />
+              <PageHeader title="Más" />
               {/* Cuenta, con la rueda de Ajustes (tema y cerrar sesión). */}
               <AccountCard email={email} onSettings={() => setSettings(true)} className="bg-sunk" />
               <nav aria-label="Archivo" className="flex flex-col">
@@ -884,7 +884,8 @@ function Tasks({ space }: { space: Space }) {
                   </button>
                 ))
               }
-              context={[spaceLabel, ...(label ? ["Etiquetas"] : []), ...ancestors.map((a) => a.name)].join(" › ")}
+              // La sección ya se ve en el selector: aquí solo va la ruta (Niños › Haru) o «Etiquetas».
+              context={[...(label ? ["Etiquetas"] : []), ...ancestors.map((a) => a.name)].join(" › ") || undefined}
               count={
                 doneView
                   ? { label: weekDone === 0 ? "Nada esta semana" : `${weekDone} esta semana`, empty: weekDone === 0 }

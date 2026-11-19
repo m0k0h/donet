@@ -23,7 +23,7 @@ export type Task = {
   dueTime?: string; // HH:MM, solo si hay fecha
   createdAt: number;
   completedAt?: number; // cuándo se completó (las antiguas no lo tienen)
-  hideDoneSubtasks?: boolean; // oculta sus subtareas completadas
+  showDoneSubtasks?: boolean; // muestra sus subtareas completadas (por defecto, ocultas)
 };
 
 // Comentario de una tarea: solo texto, en orden de llegada.

@@ -164,8 +164,9 @@ create policy "task_labels_delete_own" on public.task_labels
 -- Las completadas antes de existir esta columna se quedan sin fecha.
 alter table public.tasks add column if not exists completed_at timestamptz;
 
--- Si una tarea oculta sus subtareas completadas (se elige en cada tarea).
-alter table public.tasks add column if not exists hide_done_subtasks boolean not null default false;
+-- Si una tarea muestra sus subtareas completadas (por defecto se ocultan; se elige en cada tarea).
+-- Sustituye a hide_done_subtasks, que ya no se usa.
+alter table public.tasks add column if not exists show_done_subtasks boolean not null default false;
 
 -- ─── Compra compartida ──────────────────────────────────────────────────────
 -- Un hogar agrupa a varias personas que comparten la lista de la compra.

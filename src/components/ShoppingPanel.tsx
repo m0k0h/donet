@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { EmptyShopping } from "./EmptyShopping";
 import {
   DEFAULT_LIST_NAME,
   MAX_LISTS,
@@ -630,11 +631,7 @@ function ShoppingList({ shop, household, userId }: { shop: Shop; household: Hous
         </button>
       </form>
 
-      {shop.loaded && shop.items.length === 0 && (
-        <p className="py-16 text-center text-muted">
-          La lista está vacía. Apunta lo que se vaya acabando{shared ? " y lo verá el resto de la lista" : ""}.
-        </p>
-      )}
+      {shop.loaded && shop.items.length === 0 && <EmptyShopping shared={shared} />}
 
       {pending.length > 0 && (
         <ul className="flex flex-col">

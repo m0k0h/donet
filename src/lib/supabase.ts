@@ -22,7 +22,7 @@ type Row = {
   due_time?: string | null; // "10:00:00"
   created_at: string;
   completed_at?: string | null;
-  hide_done_subtasks?: boolean;
+  show_done_subtasks?: boolean;
 };
 
 // Todas las columnas: así la app sigue cargando aunque falte alguna columna nueva por crear.
@@ -55,7 +55,7 @@ const fromRow = (r: Row): Task => ({
   dueTime: (r.due && r.due_time?.slice(0, 5)) || undefined,
   createdAt: Date.parse(r.created_at),
   completedAt: r.completed_at ? Date.parse(r.completed_at) : undefined,
-  hideDoneSubtasks: r.hide_done_subtasks ?? false,
+  showDoneSubtasks: r.show_done_subtasks ?? false,
 });
 
 export async function fetchTasks(): Promise<Task[]> {
@@ -82,8 +82,8 @@ export async function setTasksDone(ids: string[], done: boolean, at?: number) {
   if (error) throw error;
 }
 
-export async function setHideDoneSubtasks(id: string, hide: boolean) {
-  const { error } = await supabase!.from("tasks").update({ hide_done_subtasks: hide }).eq("id", id);
+export async function setShowDoneSubtasks(id: string, show: boolean) {
+  const { error } = await supabase!.from("tasks").update({ show_done_subtasks: show }).eq("id", id);
   if (error) throw error;
 }
 

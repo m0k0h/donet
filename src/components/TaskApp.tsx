@@ -47,7 +47,7 @@ import {
   insertLabels,
   insertProject,
   insertTasks,
-  setHideDoneSubtasks,
+  setShowDoneSubtasks,
   setTaskLabels,
   setTasksDone,
   supabase,
@@ -242,6 +242,8 @@ function Tasks({ space }: { space: Space }) {
   const [undo, setUndo] = useState<{ id: string; title: string } | null>(null);
   // La Compra se abre en el panel principal, sin salir de la app.
   const [shopping, setShopping] = useState(false);
+  // Completadas desplegadas al final de la lista; se vuelven a plegar al cambiar de lista.
+  const [showDoneHere, setShowDoneHere] = useState(false);
   const shop = useShopping(userId);
 
   // Se llega a la Compra desde /compra o con una invitación pendiente.
@@ -358,16 +360,24 @@ function Tasks({ space }: { space: Space }) {
     return { done: subs.filter((t) => t.done).length, total: subs.length };
   };
   const tree = isTree(sel);
-  // Las subtareas completadas se ven bajo su tarea, salvo que esa tarea las oculte.
+  // Las subtareas completadas no se ven bajo su tarea, salvo que esa tarea las muestre.
   const childrenOf = (id: string) => {
-    const hide = tasks.find((p) => p.id === id)?.hideDoneSubtasks;
-    return sortTasks(list.filter((t) => t.parentId === id && (!hide || showInList(t))));
+    const show = tasks.find((p) => p.id === id)?.showDoneSubtasks;
+    return sortTasks(list.filter((t) => t.parentId === id && (show || showInList(t))));
   };
   // En árbol, las raíces son las tareas cuya madre no está en la lista.
   const isRoot = (t: Task) => !tree || !t.parentId || !list.some((p) => p.id === t.parentId);
   const roots = doneView ? [] : sortTasks(list.filter((t) => isRoot(t) && showInList(t)));
-  // Completadas de esta lista que ya no se ven, para el enlace a Completadas.
-  const doneHere = doneView ? 0 : list.filter((t) => isRoot(t) && t.done && !justDone.has(t.id)).length;
+  // Completadas de esta lista que ya no se ven: se despliegan al final, la última completada primero.
+  // Hoy y Próximo no las ofrecen: son agendas de lo que queda por hacer.
+  const agendaView = sel.kind === "view" && sel.view !== "inbox";
+  const doneRoots =
+    doneView || agendaView
+      ? []
+      : list
+          .filter((t) => isRoot(t) && t.done && !justDone.has(t.id))
+          .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+  const doneHere = doneRoots.length;
 
   const pendingIn = (s: Selection) => tasksIn(tasks, space, s, taskLabels).filter((t) => !t.done).length;
   const count = list.filter((t) => !t.done).length;
@@ -389,6 +399,7 @@ function Tasks({ space }: { space: Space }) {
 
   function select(s: Selection) {
     setSelection(s);
+    setShowDoneHere(false);
     setShopping(false);
     setMore(false);
     setComposerOpen(false);
@@ -582,11 +593,11 @@ function Tasks({ space }: { space: Space }) {
     setTasks((prev) => prev.map((t) => (set.has(t.id) ? { ...t, done: false, completedAt: undefined } : t)));
     sync(setTasksDone(toReopen, false));
   }
-  // Ocultar o mostrar las subtareas completadas de una tarea (se guarda en la tarea).
-  function toggleHideDoneSubtasks(task: Task) {
-    const hide = !task.hideDoneSubtasks;
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, hideDoneSubtasks: hide } : t)));
-    sync(setHideDoneSubtasks(task.id, hide));
+  // Mostrar u ocultar las subtareas completadas de una tarea (se guarda en la tarea).
+  function toggleShowDoneSubtasks(task: Task) {
+    const show = !task.showDoneSubtasks;
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, showDoneSubtasks: show } : t)));
+    sync(setShowDoneSubtasks(task.id, show));
   }
 
   function askRemoveTask(id: string) {
@@ -988,7 +999,7 @@ function Tasks({ space }: { space: Space }) {
                     commentCount={commentCount}
                     onComments={(t) => setCommentsTaskId(t.id)}
                     progressOf={progressOf}
-                    onToggleHideDone={toggleHideDoneSubtasks}
+                    onToggleShowDone={toggleShowDoneSubtasks}
                     labelsOf={labelsOf}
                     spaceLabels={spaceLabels}
                   />
@@ -996,16 +1007,33 @@ function Tasks({ space }: { space: Space }) {
               </ul>
             )}
 
-            {/* Lo completado de esta lista no se pierde: está en Completadas. */}
+            {/* Lo completado de esta lista se despliega aquí mismo, como las subtareas completadas. */}
             {doneHere > 0 && (
-              <button
-                onClick={() => select({ kind: "done" })}
-                className="inline-flex min-h-11 items-center gap-2 self-start rounded-lg px-2 text-sm font-semibold text-muted hover:bg-track hover:text-ink"
-              >
-                <CheckIcon size={14} />
-                {doneHere === 1 ? "1 completada" : `${doneHere} completadas`}
-                <span aria-hidden="true">→</span>
-              </button>
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={() => setShowDoneHere((v) => !v)}
+                  aria-expanded={showDoneHere}
+                  className="inline-flex min-h-11 items-center gap-1.5 self-start rounded-lg px-2 text-sm font-semibold text-muted hover:bg-track hover:text-ink"
+                >
+                  <EyeIcon size={15} off={!showDoneHere} />
+                  {`${showDoneHere ? "Ocultar" : "Mostrar"} ${doneHere === 1 ? "1 completada" : `${doneHere} completadas`}`}
+                </button>
+                {showDoneHere && (
+                  <ul className="flex flex-col">
+                    {doneRoots.map((t) => (
+                      <TaskRow
+                        key={t.id}
+                        task={t}
+                        depth={0}
+                        tree={tree}
+                        context={tree ? undefined : flatContext(t)}
+                        onToggleShowDone={toggleShowDoneSubtasks}
+                        {...rowProps}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
             </>
           )}
@@ -1191,7 +1219,7 @@ function TaskRow({
   commentCount,
   onComments,
   progressOf,
-  onToggleHideDone,
+  onToggleShowDone,
   labelsOf,
   spaceLabels,
 }: {
@@ -1210,8 +1238,8 @@ function TaskRow({
   commentCount: (taskId: string) => number;
   onComments: (t: Task) => void;
   progressOf: (id: string) => { done: number; total: number };
-  // Solo en árbol: ocultar o mostrar las subtareas completadas de esta tarea.
-  onToggleHideDone?: (t: Task) => void;
+  // Solo en árbol: mostrar u ocultar las subtareas completadas de esta tarea.
+  onToggleShowDone?: (t: Task) => void;
   labelsOf: (taskId: string) => Label[];
   spaceLabels: Label[];
 }) {
@@ -1420,7 +1448,7 @@ function TaskRow({
               commentCount={commentCount}
               onComments={onComments}
               progressOf={progressOf}
-              onToggleHideDone={onToggleHideDone}
+              onToggleShowDone={onToggleShowDone}
               labelsOf={labelsOf}
               spaceLabels={spaceLabels}
             />
@@ -1428,15 +1456,15 @@ function TaskRow({
         </ul>
       )}
 
-      {tree && onToggleHideDone && progress.done > 0 && (
+      {tree && onToggleShowDone && progress.done > 0 && (
         <div style={{ paddingLeft: (depth + 1) * 28 + 4 }}>
           <button
-            onClick={() => onToggleHideDone(t)}
-            aria-pressed={!!t.hideDoneSubtasks}
+            onClick={() => onToggleShowDone(t)}
+            aria-pressed={!!t.showDoneSubtasks}
             className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-[13px] font-semibold text-muted hover:bg-track hover:text-ink"
           >
-            <EyeIcon size={14} off={!!t.hideDoneSubtasks} />
-            {t.hideDoneSubtasks
+            <EyeIcon size={14} off={!t.showDoneSubtasks} />
+            {!t.showDoneSubtasks
               ? `Mostrar ${progress.done === 1 ? "1 completada" : `${progress.done} completadas`}`
               : `Ocultar ${progress.done === 1 ? "1 completada" : `${progress.done} completadas`}`}
           </button>

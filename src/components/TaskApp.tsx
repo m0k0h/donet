@@ -62,6 +62,7 @@ import CommentsDialog from "./CommentsDialog";
 import ConfirmDialog from "./ConfirmDialog";
 import { DetectedDateChip, useDetectedDate } from "./DetectedDate";
 import { EmptyFilter } from "./EmptyFilter";
+import { EmptyInbox } from "./EmptyInbox";
 import Dialog from "./Dialog";
 import LabelDialog from "./LabelDialog";
 import { LabelList, LabelTag, TypedLabels } from "./Labels";
@@ -72,7 +73,7 @@ import ProjectTree from "./ProjectTree";
 import SetupScreen from "./SetupScreen";
 import ShoppingPanel, { ShoppingNotice, useShopping } from "./ShoppingPanel";
 import TaskDialog, { type TaskDraft } from "./TaskDialog";
-import ThemeToggle, { ThemeChoice } from "./ThemeToggle";
+import { ThemeChoice } from "./ThemeToggle";
 import {
   CalendarIcon,
   CartIcon,
@@ -80,6 +81,7 @@ import {
   ChevronIcon,
   ClockIcon,
   CommentIcon,
+  DotsIcon,
   EyeIcon,
   FlagIcon,
   GearIcon,
@@ -159,6 +161,34 @@ function ShoppingNavItem({ active, pending, onClick }: { active: boolean; pendin
         </span>
         <span className="flex-1">Compra</span>
         {pending > 0 && <span className={`text-[13px] ${active ? "" : "text-accent"}`}>{pending}</span>}
+      </button>
+    </div>
+  );
+}
+
+// Cuenta con la que se ha entrado y la rueda que abre Ajustes (tema, cerrar sesión y lo que venga).
+function AccountCard({ email, onSettings, className = "" }: { email: string; onSettings: () => void; className?: string }) {
+  return (
+    <div className={`flex items-center gap-3 rounded-xl py-2 pl-3 pr-1.5 ${className}`}>
+      <span
+        aria-hidden="true"
+        className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent text-base font-bold uppercase text-white"
+      >
+        {email.charAt(0) || "?"}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-semibold text-muted">Tu cuenta</p>
+        <p className="truncate text-[15px] font-bold" title={email || undefined}>
+          {email || "Sesión iniciada"}
+        </p>
+      </div>
+      <button
+        onClick={onSettings}
+        aria-label="Ajustes"
+        title="Ajustes"
+        className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink"
+      >
+        <GearIcon size={22} />
       </button>
     </div>
   );
@@ -252,6 +282,14 @@ function Tasks({ space }: { space: Space }) {
   useEffect(() => {
     if (consumeOpenShopping() || loadPendingInvite()) setShopping(true);
   }, []);
+
+  // Al cambiar de sección se cierra la Compra (en Laboral no tiene entrada en la barra lateral).
+  const prevSpace = useRef(space);
+  useEffect(() => {
+    if (prevSpace.current === space) return;
+    prevSpace.current = space;
+    setShopping(false);
+  }, [space]);
 
   // El aviso de «Deshacer» se va solo a los pocos segundos.
   useEffect(() => {
@@ -663,15 +701,6 @@ function Tasks({ space }: { space: Space }) {
   if (userId === undefined) return <div className="min-h-dvh" />;
   if (!userId) return <AuthScreen />;
 
-  const signOut = (
-    <button
-      onClick={() => supabase!.auth.signOut()}
-      className="min-h-11 rounded-lg px-3.5 text-sm font-semibold text-ink-soft hover:bg-track"
-    >
-      Cerrar sesión
-    </button>
-  );
-
   // Lo que se ve en Más está seleccionado: un proyecto, una etiqueta o Completadas.
   const offScreen = shopping || more;
 
@@ -737,7 +766,13 @@ function Tasks({ space }: { space: Space }) {
         <div className="pl-2">
           <Logo size={28} surface="var(--sunk)" />
         </div>
-        <SpaceSwitch space={space} showLabel />
+        <div className="flex flex-col gap-2">
+          <SpaceSwitch space={space} showLabel />
+          {/* La Compra es de casa: en Laboral no aparece. */}
+          {space === "personal" && (
+            <ShoppingNavItem active={shopping} pending={shop.pendingCount} onClick={openShopping} />
+          )}
+        </div>
         <nav aria-label="Vistas" className="flex flex-col gap-1">
           {VIEWS.map((v) => {
             const active = !offScreen && sel.kind === "view" && sel.view === v.id;
@@ -769,19 +804,18 @@ function Tasks({ space }: { space: Space }) {
             <span className="flex-1">Completadas</span>
           </button>
         </nav>
-        <ShoppingNavItem active={shopping} pending={shop.pendingCount} onClick={openShopping} />
         {projectTree}
         {labelList}
-        {/* Zona de ajustes, abajo del todo */}
-        <div className="mt-auto flex items-center justify-between">
-          {signOut}
-          <ThemeToggle />
+        {/* Cuenta con la que se ha entrado y la rueda de Ajustes, abajo del todo. */}
+        <div className="mt-auto">
+          <AccountCard email={email} onSettings={() => setSettings(true)} className="bg-bg" />
         </div>
       </aside>
 
       <main className="min-w-0 flex-1 px-4 pb-32 pt-4 md:px-6 md:pb-16 md:pt-10">
         <div className="mx-auto flex max-w-[720px] flex-col gap-6">
-          <div className="flex items-center justify-between md:hidden">
+          {/* Barra de arriba del móvil, separada del contenido por una línea. */}
+          <div className="-mx-4 -mb-3 -mt-2 flex items-center justify-between border-b border-line px-4 pb-2.5 md:hidden">
             <Logo size={24} />
             <SpaceSwitch space={space} />
           </div>
@@ -800,26 +834,7 @@ function Tasks({ space }: { space: Space }) {
             <>
               <PageHeader title="Más" context={spaceLabel} />
               {/* Cuenta, con la rueda de Ajustes (tema y cerrar sesión). */}
-              <div className="flex items-center gap-3 rounded-xl bg-sunk py-2 pl-3 pr-1.5">
-                <span
-                  aria-hidden="true"
-                  className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent text-base font-bold uppercase text-white"
-                >
-                  {email.charAt(0) || "?"}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-semibold text-muted">Tu cuenta</p>
-                  <p className="truncate text-[15px] font-bold">{email || "Sesión iniciada"}</p>
-                </div>
-                <button
-                  onClick={() => setSettings(true)}
-                  aria-label="Ajustes"
-                  title="Ajustes"
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track hover:text-ink"
-                >
-                  <GearIcon size={22} />
-                </button>
-              </div>
+              <AccountCard email={email} onSettings={() => setSettings(true)} className="bg-sunk" />
               <nav aria-label="Archivo" className="flex flex-col">
                 <button
                   onClick={() => select({ kind: "done" })}
@@ -920,10 +935,12 @@ function Tasks({ space }: { space: Space }) {
             {loaded && !doneView && roots.length === 0 && (
               sel.kind === "view" && sel.view !== "inbox" ? (
                 <EmptyFilter view={sel.view} />
+              ) : sel.kind === "view" ? (
+                <EmptyInbox />
               ) : label ? (
                 <p className="py-16 text-center text-muted">Ninguna tarea pendiente lleva esta etiqueta.</p>
               ) : (
-                <p className="py-16 text-center text-muted">Nada por aquí. ¡Te has ganado un donete!</p>
+                <p className="py-16 text-center text-muted">No queda nada pendiente en este proyecto.</p>
               )
             )}
 
@@ -1124,9 +1141,8 @@ function Tasks({ space }: { space: Space }) {
             <h3 className="text-[13px] font-bold uppercase tracking-wide text-muted">Tema</h3>
             <ThemeChoice />
           </section>
+          {/* La cuenta ya se ve en la tarjeta que abre Ajustes: aquí solo hace falta salir. */}
           <section className="flex flex-col gap-2">
-            <h3 className="text-[13px] font-bold uppercase tracking-wide text-muted">Cuenta</h3>
-            {email && <p className="truncate text-[15px]">{email}</p>}
             <button
               onClick={() => {
                 setSettings(false);
@@ -1259,6 +1275,8 @@ function TaskRow({
   spaceLabels: Label[];
 }) {
   const [adding, setAdding] = useState(false);
+  // Móvil: hoja con las acciones de la tarea (subtarea, comentarios, borrar).
+  const [menu, setMenu] = useState(false);
   const subForm = useRef<HTMLFormElement>(null);
   const subButton = useRef<HTMLButtonElement>(null);
 
@@ -1437,7 +1455,16 @@ function TaskRow({
             </div>
           )}
         </div>
-        {/* Solo las tareas pendientes admiten subtareas nuevas. */}
+        {/* Móvil: un solo botón con las acciones, para dejar todo el ancho al texto. */}
+        <button
+          onClick={() => setMenu(true)}
+          aria-label={`Acciones de: ${t.title}`}
+          aria-haspopup="dialog"
+          className="grid h-11 w-9 shrink-0 place-items-center text-muted hover:text-ink md:hidden"
+        >
+          <DotsIcon size={20} />
+        </button>
+        {/* Escritorio: las acciones aparecen al pasar por encima. Solo las pendientes admiten subtareas. */}
         {tree && !t.done && (
           <button
             ref={subButton}
@@ -1445,7 +1472,7 @@ function TaskRow({
             aria-label={`Añadir subtarea a: ${t.title}`}
             aria-expanded={adding}
             title="Añadir subtarea"
-            className="grid h-11 w-11 shrink-0 place-items-center text-muted hover:text-ink md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
+            className="hidden h-11 w-11 shrink-0 place-items-center text-muted hover:text-ink md:grid md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
           >
             <SubtaskIcon size={18} />
           </button>
@@ -1454,18 +1481,62 @@ function TaskRow({
           onClick={() => onComments(t)}
           aria-label={`Comentarios de: ${t.title}`}
           title="Comentarios"
-          className="grid h-11 w-11 shrink-0 place-items-center text-muted hover:text-ink md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
+          className="hidden h-11 w-11 shrink-0 place-items-center text-muted hover:text-ink md:grid md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
         >
           <CommentIcon size={18} />
         </button>
         <button
           onClick={() => onRemove(t.id)}
           aria-label={`Eliminar: ${t.title}`}
-          className="grid h-11 w-11 shrink-0 place-items-center text-muted hover:text-danger md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
+          className="hidden h-11 w-11 shrink-0 place-items-center text-muted hover:text-danger md:grid md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
         >
           <TrashIcon size={18} />
         </button>
       </div>
+
+      {menu && (
+        <Dialog title={t.title} onClose={() => setMenu(false)}>
+          <div className="-mx-2 flex flex-col">
+            {tree && !t.done && (
+              <button
+                onClick={() => {
+                  setMenu(false);
+                  setAdding(true);
+                }}
+                className="flex min-h-12 items-center gap-3 rounded-lg px-2 text-left text-base font-semibold hover:bg-sunk"
+              >
+                <span className="text-muted">
+                  <SubtaskIcon size={20} />
+                </span>
+                Añadir subtarea
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setMenu(false);
+                onComments(t);
+              }}
+              className="flex min-h-12 items-center gap-3 rounded-lg px-2 text-left text-base font-semibold hover:bg-sunk"
+            >
+              <span className="text-muted">
+                <CommentIcon size={20} />
+              </span>
+              Comentarios
+              {nComments > 0 && <span className="text-sm font-medium text-muted">{nComments}</span>}
+            </button>
+            <button
+              onClick={() => {
+                setMenu(false);
+                onRemove(t.id);
+              }}
+              className="flex min-h-12 items-center gap-3 rounded-lg px-2 text-left text-base font-semibold text-danger hover:bg-sunk"
+            >
+              <TrashIcon size={20} />
+              Borrar
+            </button>
+          </div>
+        </Dialog>
+      )}
 
       {!collapsed && children.length > 0 && (
         <ul className="flex flex-col">

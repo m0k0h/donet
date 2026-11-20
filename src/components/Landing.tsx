@@ -98,9 +98,12 @@ export default function Landing() {
             </h2>
             <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {FEATURES.map((f) => (
-                <li key={f.title} className="flex flex-col gap-2 rounded-xl bg-bg p-5">
-                  <span className="grid size-10 place-items-center rounded-lg bg-accent-soft text-accent-ink">{f.icon}</span>
-                  <h3 className="text-[17px] font-bold">{f.title}</h3>
+                <li key={f.title} className="flex flex-col gap-3 rounded-xl bg-bg p-5">
+                  {/* Icono y título en la misma línea; en las cuatro columnas estrechas, uno encima del otro. */}
+                  <div className="flex items-center gap-3 lg:flex-col lg:items-start lg:gap-2">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent-ink">{f.icon}</span>
+                    <h3 className="text-[17px] leading-snug font-bold">{f.title}</h3>
+                  </div>
                   <p className="text-[15px] leading-relaxed text-ink-soft">{f.text}</p>
                 </li>
               ))}

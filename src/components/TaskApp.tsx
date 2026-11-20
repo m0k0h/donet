@@ -1648,7 +1648,7 @@ function TaskRow({
             aria-label={`Añadir subtarea a: ${t.title}`}
             aria-expanded={adding}
             title="Añadir subtarea"
-            className="hidden h-11 w-11 shrink-0 place-items-center text-muted hover:text-ink md:grid md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
+            className="hidden h-11 w-8 shrink-0 place-items-center text-muted hover:text-ink md:grid md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
           >
             <SubtaskIcon size={18} />
           </button>
@@ -1657,14 +1657,14 @@ function TaskRow({
           onClick={() => onComments(t)}
           aria-label={`Comentarios de: ${t.title}`}
           title="Comentarios"
-          className="hidden h-11 w-11 shrink-0 place-items-center text-muted hover:text-ink md:grid md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
+          className="hidden h-11 w-8 shrink-0 place-items-center text-muted hover:text-ink md:grid md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
         >
           <CommentIcon size={18} />
         </button>
         <button
           onClick={() => onRemove(t.id)}
           aria-label={`Eliminar: ${t.title}`}
-          className="hidden h-11 w-11 shrink-0 place-items-center text-muted hover:text-danger md:grid md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
+          className="hidden h-11 w-8 shrink-0 place-items-center text-muted hover:text-danger md:grid md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
         >
           <TrashIcon size={18} />
         </button>

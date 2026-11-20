@@ -1,46 +1,79 @@
 # doneT
 
-Mi gestor de tareas personal, inspirado en Todoist y adaptado a mí. Sí, el nombre viene del donete.
+Mi gestor de tareas y proyectos personal, inspirado en Todoist y adaptado a mí. Sí, el nombre viene del donete.
 
-## Estado
+Está publicado en GitHub Pages: https://m0k0h.github.io/donet/
 
-Primera versión (MVP):
-- Dos secciones fijas, **Personal** y **Laboral**, cada una con su dirección propia: `/personal` y `/laboral`. La dirección principal lleva a la última que abriste
-- Vistas **Entrada**, **Hoy** y **Próximo**
-- Crear, completar y borrar tareas, con fecha y prioridad (P1–P4)
-- Dos formas de crear tareas: **rápida** (solo el texto) y **completa** (descripción, fecha, prioridad, sección y proyecto)
-- **Proyectos** propios en cada sección, con color opcional y anidables (proyectos dentro de proyectos), en árbol en la barra lateral
-- **Subtareas** a cualquier profundidad
-- Todo se puede editar después: pulsa una tarea para cambiarla (o moverla de proyecto o sección, con sus subtareas) y usa el lápiz de un proyecto para renombrarlo, cambiarle el color, moverlo o borrarlo
-- Las tareas creadas fuera de un proyecto van a **Entrada**
-- **Fechas y horas en lenguaje natural**: escribe «mañana», «el viernes», «el próximo lunes», «el 1 de diciembre», «15/3», «en 2 semanas», «este finde»… y también la hora: «a las 10», «a las 21», «a las 9:30», «a las 9 de la noche», «a las 5 y media», «9 AM», «18:45». Se pone esa fecha y hora y se quita del texto. Si no era una fecha, se descarta con la ✕. Solo con hora, la tarea es para hoy (o mañana si esa hora ya ha pasado)
-- Hora opcional en las tareas, también desde el formulario
-- Las descripciones largas se despliegan en la lista con «Ver más», sin abrir la tarea
-- Diseño adaptado: barra lateral en escritorio; en móvil, navegación inferior y botón flotante para añadir
-- Identidad propia: logo, tipografía Outfit, magenta en Personal y azul marino en Laboral, modo claro y oscuro
+## Funcionalidades
+
+### Portada y cuenta
+- **Portada** en la dirección principal para quien no ha iniciado sesión: explica qué es doneT y lleva a **Iniciar sesión** o **Crear cuenta**. Con sesión, la dirección principal lleva directamente a la última sección abierta
 - Cuenta de usuario y sincronización entre dispositivos con Supabase (obligatorio: sin configurar, la app no arranca)
-- **Listas de la compra**, integradas en la app (destacadas antes de Proyectos y en la barra inferior del móvil, con el número de cosas por comprar). Todo el mundo empieza con «Mi lista»; al compartirla con un enlace (caduca en 7 días) pasa a llamarse «Compartida» («Compartida 2»…) y cualquiera puede renombrarla. Se puede tener varias, crear otra «Mi lista» y salir de una. Los cambios se ven al momento en todos los móviles; cantidad y nota opcionales, aviso si algo ya está en la lista, y «Terminar compra» quita lo que ya está en el carro
-- **Calendarios de Google** (solo lectura): en Ajustes se conectan una o varias cuentas de Google y, de cada calendario, se elige si sus eventos se ven en Personal, en Laboral o en las dos. Los eventos salen en **Hoy** (encima de las tareas) y en **Próximo** (que ahora va día a día, con eventos y tareas juntos; los eventos, de los próximos 7 días). Pulsar un evento lo abre en Google Calendar
+- Página pública de [política de privacidad](https://m0k0h.github.io/donet/privacidad/)
+
+### Secciones y vistas
+- Dos secciones, **Personal** y **Laboral**, cada una con su dirección propia (`/personal` y `/laboral`), sus proyectos, etiquetas y calendarios
+- Vistas **Entrada**, **Hoy**, **Próximo** y **Completadas**
+- **Hoy** muestra los eventos del día encima de las tareas
+- **Próximo** va día a día, con eventos y tareas juntos; los eventos, solo de los próximos 7 días y con un fondo propio para distinguirlos
+- En **Hoy** y **Próximo** cada tarea se ve con sus **subtareas desplegables**; pulsar una tarea lleva a su proyecto (o a Entrada) y la resalta allí
+
+### Tareas y proyectos
+- Crear, completar y borrar tareas, con fecha, hora opcional y prioridad (P1–P4)
+- Dos formas de crear tareas: **rápida** (solo el texto) y **completa** (descripción, fecha, prioridad, sección y proyecto)
+- **Fechas y horas en lenguaje natural**: «mañana», «el viernes», «el próximo lunes», «el 1 de diciembre», «15/3», «en 2 semanas», «este finde», «a las 10», «a las 9 de la noche», «9 AM»… Se pone esa fecha y hora y se quita del texto; si no era una fecha, se descarta con la ✕
+- **Proyectos** con color opcional y anidables, en árbol en la barra lateral. Las tareas sin proyecto van a **Entrada**
+- **Subtareas** a cualquier profundidad, plegables, con las completadas ocultas por defecto
+- **Etiquetas** y **comentarios** en las tareas
+- Todo se puede editar después: tareas (también moverlas de proyecto o sección, con sus subtareas) y proyectos
+- Las completadas se despliegan al final de cada lista con «Mostrar N completadas»
+
+### Calendarios de Google
+- En Ajustes se conectan una o varias cuentas de Google (solo lectura) y, de cada calendario, se elige si sus eventos se ven en Personal, en Laboral o en las dos
+- Los eventos salen en **Hoy** y **Próximo**; pulsar uno lo abre en Google Calendar
+- Botón **Ocultar eventos** / **Mostrar eventos** en Hoy y Próximo, que se recuerda en cada navegador
+
+### Listas de la compra
+- Integradas en Personal, con el número de cosas por comprar
+- Se comparten con un enlace (caduca en 7 días) y los cambios se ven al momento en todos los móviles
+- Cantidad y nota opcionales, aviso si algo ya está en la lista, y «Terminar compra» quita lo que ya está en el carro
+
+### Diseño
+- Barra lateral en escritorio; en móvil, navegación inferior y botón flotante para añadir
+- Identidad propia: logo, tipografía Outfit, magenta en Personal y azul marino en Laboral, modo claro y oscuro
 
 ## Próximos pasos
 
-- [ ] Etiquetas
+- [x] Etiquetas
 - [x] Fechas en lenguaje natural ("mañana a las 10")
+- [x] Calendarios de Google
 - [ ] Tareas recurrentes
 - [ ] Instalable como app (PWA)
+
+## Stack
+
+- [Next.js](https://nextjs.org/) 15 (App Router) con exportación estática (`output: "export"`): no hay servidor, se publica en GitHub Pages
+- React 19 · TypeScript · Tailwind CSS 4
+- [Supabase](https://supabase.com/): autenticación, base de datos Postgres con seguridad por filas, tiempo real y Vault para los secretos de Google
+- GitHub Actions: lint, build y despliegue a GitHub Pages en cada push a `main` (`.github/workflows/deploy.yml`)
 
 ## Desarrollo
 
 ```bash
 npm install
+cp .env.example .env.local   # y rellena las claves de Supabase
 npm run dev
 ```
 
 Abre http://localhost:3000.
 
+`.env.local` necesita `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Sin ellas la app solo muestra «Falta configurar Supabase».
+
+Con worktrees, `main` usa el puerto 3000 y cada worktree el primero libre entre 3001 y 3003 (ver `CLAUDE.md` y `.claude/launch.json`). Cada worktree necesita su propio `npm install`.
+
 ### Base de datos (Supabase)
 
-1. Ejecuta `supabase/schema.sql` en el SQL Editor del proyecto de Supabase (crea las tablas de tareas, proyectos y la compra compartida, con seguridad por filas y tiempo real). Se puede volver a ejecutar sin perder datos cuando cambie.
+1. Ejecuta `supabase/schema.sql` en el SQL Editor del proyecto de Supabase (crea las tablas de tareas, proyectos, etiquetas, comentarios, la compra compartida y las cuentas de Google, con seguridad por filas y tiempo real). Se puede volver a ejecutar sin perder datos cuando cambie.
 2. Copia `.env.example` a `.env.local` y rellena la clave publicable.
 
 Al iniciar sesión por primera vez, las tareas guardadas en el navegador se suben a la cuenta.
@@ -61,4 +94,29 @@ doneT es una web estática, así que el intercambio de permisos con Google lo ha
    ```
 5. En doneT: Ajustes → **Añadir cuenta de Google**, y marca en cada calendario las secciones donde quieres verlo.
 
-Stack: Next.js · TypeScript · Tailwind CSS
+## Estructura
+
+```
+src/
+  app/
+    page.tsx            Dirección principal: portada sin sesión, o a la última sección con sesión
+    [space]/page.tsx    /personal y /laboral: la app de tareas
+    compra/             Entrada a la Compra y enlaces de invitación (/compra/?unirse=…)
+    google/             Vuelta de Google al conectar una cuenta
+    privacidad/         Política de privacidad
+    layout.tsx, globals.css
+  components/
+    Landing.tsx         Portada pública
+    AuthScreen.tsx      Inicio de sesión y registro
+    TaskApp.tsx         La app: vistas, listas, barra lateral y navegación
+    CalendarEvents.tsx, GoogleCalendars.tsx, ShoppingPanel.tsx, TaskDialog.tsx…
+    Logo.tsx, icons.tsx
+  lib/
+    supabase.ts         Cliente y consultas a Supabase
+    tasks.ts            Tipos y lógica de tareas, proyectos y secciones
+    naturalDate.ts      Fechas y horas en lenguaje natural
+    google.ts           Calendarios y eventos de Google
+    shopping.ts         Listas de la compra
+    theme.ts            Modo claro y oscuro
+supabase/schema.sql     Esquema completo de la base de datos
+```

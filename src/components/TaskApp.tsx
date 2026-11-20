@@ -293,6 +293,8 @@ function Tasks({ space }: { space: Space }) {
   const [undo, setUndo] = useState<{ id: string; title: string } | null>(null);
   // La Compra se abre en el panel principal, sin salir de la app.
   const [shopping, setShopping] = useState(false);
+  // Tarea a la que se acaba de ir desde una agenda, para señalarla en su proyecto.
+  const [goneTo, setGoneTo] = useState<string | null>(null);
   // Completadas desplegadas al final de la lista; se vuelven a plegar al cambiar de lista.
   const [showDoneHere, setShowDoneHere] = useState(false);
   const shop = useShopping(userId);
@@ -315,6 +317,22 @@ function Tasks({ space }: { space: Space }) {
     prevSpace.current = space;
     setShopping(false);
   }, [space]);
+
+  // Al llegar desde una agenda, se busca la tarea (o, si está plegada, su madre visible) y se resalta.
+  useEffect(() => {
+    if (!goneTo) return;
+    setGoneTo(null);
+    for (let id: string | undefined = goneTo; id; id = tasks.find((t) => t.id === id)?.parentId) {
+      const el = document.querySelector<HTMLElement>(`[data-task-id="${id}"]`);
+      if (!el) continue;
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      el.animate([{ backgroundColor: "var(--accent-soft)" }, { backgroundColor: "transparent" }], {
+        duration: 1600,
+        easing: "ease-out",
+      });
+      break;
+    }
+  }, [goneTo, tasks]);
 
   // El aviso de «Deshacer» se va solo a los pocos segundos.
   useEffect(() => {
@@ -424,20 +442,23 @@ function Tasks({ space }: { space: Space }) {
     const subs = tasks.filter((t) => t.parentId === id);
     return { done: subs.filter((t) => t.done).length, total: subs.length };
   };
-  const tree = isTree(sel);
+  // Hoy, Próximo y Próximos (móvil): agendas por fecha. Solo se consultan; pulsar una tarea lleva a su proyecto.
+  const dateView = sel.kind === "view" && sel.view !== "inbox";
+  // Entrada y proyectos son árboles; en las agendas, cada tarea también despliega sus subtareas
+  // (todas, tengan fecha o no), y la que ya va dentro de su madre no se repite suelta.
+  const tree = isTree(sel) || dateView;
   // Las subtareas completadas no se ven bajo su tarea, salvo que esa tarea las muestre.
   const childrenOf = (id: string) => {
     const show = tasks.find((p) => p.id === id)?.showDoneSubtasks;
-    return sortTasks(list.filter((t) => t.parentId === id && (show || showInList(t))));
+    return sortTasks((dateView ? tasks : list).filter((t) => t.parentId === id && (show || showInList(t))));
   };
   // En árbol, las raíces son las tareas cuya madre no está en la lista.
   const isRoot = (t: Task) => !tree || !t.parentId || !list.some((p) => p.id === t.parentId);
   const roots = doneView ? [] : sortTasks(list.filter((t) => isRoot(t) && showInList(t)));
   // Completadas de esta lista que ya no se ven: se despliegan al final, la última completada primero.
   // Hoy y Próximo no las ofrecen: son agendas de lo que queda por hacer.
-  const agendaView = sel.kind === "view" && sel.view !== "inbox";
   const doneRoots =
-    doneView || agendaView
+    doneView || dateView
       ? []
       : list
           .filter((t) => isRoot(t) && t.done && !justDone.has(t.id))
@@ -503,6 +524,12 @@ function Tasks({ space }: { space: Space }) {
     setShopping(false);
     setMore(false);
     setComposerOpen(false);
+  }
+
+  // Desde las agendas, una tarea lleva a su proyecto (o a Entrada) y se señala allí.
+  function goToTask(t: Task) {
+    select(t.projectId ? { kind: "project", id: t.projectId } : INBOX);
+    setGoneTo(t.id);
   }
 
   function openShopping() {
@@ -805,6 +832,7 @@ function Tasks({ space }: { space: Space }) {
     childrenOf,
     onToggle: toggle,
     onEdit: setEditingTask,
+    onGoTo: dateView ? goToTask : undefined,
     onRemove: askRemoveTask,
     onAddSubtask: addSubtask,
     commentCount,
@@ -1069,9 +1097,11 @@ function Tasks({ space }: { space: Space }) {
                         key={t.id}
                         task={t}
                         depth={0}
-                        tree={false}
+                        tree
                         hideToday={g.key === today}
                         context={flatContext(t)}
+                        onToggleShowDone={toggleShowDoneSubtasks}
+                        onToggleCollapsed={toggleCollapsed}
                         {...rowProps}
                       />
                     ))}
@@ -1088,26 +1118,12 @@ function Tasks({ space }: { space: Space }) {
                     key={t.id}
                     task={t}
                     depth={0}
-                    today={today}
                     tree={tree}
-                    childrenOf={childrenOf}
                     hideToday={sel.kind === "view" && sel.view === "today"}
-                    context={
-                      tree
-                        ? undefined
-                        : { parent: tasks.find((p) => p.id === t.parentId)?.title, project: projectById(t.projectId) }
-                    }
-                    onToggle={toggle}
-                    onEdit={setEditingTask}
-                    onRemove={askRemoveTask}
-                    onAddSubtask={addSubtask}
-                    commentCount={commentCount}
-                    onComments={(t) => setCommentsTaskId(t.id)}
-                    progressOf={progressOf}
+                    context={tree && !dateView ? undefined : flatContext(t)}
                     onToggleShowDone={toggleShowDoneSubtasks}
                     onToggleCollapsed={toggleCollapsed}
-                    labelsOf={labelsOf}
-                    spaceLabels={spaceLabels}
+                    {...rowProps}
                   />
                 ))}
               </ul>
@@ -1322,6 +1338,7 @@ function TaskRow({
   childrenOf,
   onToggle,
   onEdit,
+  onGoTo,
   onRemove,
   onAddSubtask,
   commentCount,
@@ -1342,6 +1359,8 @@ function TaskRow({
   childrenOf: (id: string) => Task[];
   onToggle: (t: Task) => void;
   onEdit: (t: Task) => void;
+  // En las agendas no se edita: pulsar la tarea lleva a su proyecto.
+  onGoTo?: (t: Task) => void;
   onRemove: (id: string) => void;
   onAddSubtask: (parent: Task, title: string, due?: string, dueTime?: string, labels?: string[]) => void;
   commentCount: (taskId: string) => number;
@@ -1381,6 +1400,9 @@ function TaskRow({
   const overdue = !t.done && isOverdue(t, today);
   const children = tree ? childrenOf(t.id) : [];
   const indent = { paddingLeft: depth * 28 };
+  const open = onGoTo ?? onEdit;
+  // Solo se añaden subtareas desde el proyecto o Entrada, no desde las agendas.
+  const canAddSub = tree && !t.done && !onGoTo;
 
   function submitSub(e: React.FormEvent) {
     e.preventDefault();
@@ -1407,7 +1429,7 @@ function TaskRow({
 
   return (
     <li className="flex flex-col">
-      <div className="group flex items-start gap-1 border-b border-line py-1.5" style={indent}>
+      <div data-task-id={t.id} className="group flex items-start gap-1 border-b border-line py-1.5" style={indent}>
         <button
           onClick={() => onToggle(t)}
           disabled={blocked}
@@ -1423,15 +1445,16 @@ function TaskRow({
             <span className={`h-5 w-5 rounded-full border-2 ${PRIORITY_CIRCLE[t.priority]}`} />
           )}
         </button>
-        {/* Pulsar la tarea la abre para editarla (el botón del título es el accesible por teclado;
-            el resto de la zona también responde al ratón). Desplegar la descripción no edita. */}
-        <div onClick={() => onEdit(t)} className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 py-2.5">
+        {/* Pulsar la tarea la abre para editarla, o en las agendas lleva a su proyecto (el botón del
+            título es el accesible por teclado; el resto de la zona también responde al ratón).
+            Desplegar la descripción no hace nada de eso. */}
+        <div onClick={() => open(t)} className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 py-2.5">
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onEdit(t);
+              open(t);
             }}
-            aria-label={`Editar: ${t.title}`}
+            aria-label={`${onGoTo ? "Ir a su proyecto" : "Editar"}: ${t.title}`}
             className="break-words rounded text-left"
           >
             <span className={t.done ? "text-muted line-through" : ""}>{t.title}</span>
@@ -1460,6 +1483,32 @@ function TaskRow({
                   aria-label={`Prioridad ${t.priority}`}
                 >
                   <FlagIcon size={13} />P{t.priority}
+                </span>
+              )}
+              {/* De dónde es: proyecto (o Entrada) y, si es una subtarea, su tarea madre. */}
+              {context && (
+                <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-muted">
+                  {context.project ? (
+                    <>
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ background: projectHex(context.project.color) }}
+                      />
+                      <span className="shrink-0 whitespace-nowrap">{context.project.name}</span>
+                    </>
+                  ) : (
+                    <>
+                      <ViewIcon view="inbox" size={13} />
+                      Entrada
+                    </>
+                  )}
+                  {context.parent && (
+                    <>
+                      <span aria-hidden="true">›</span>
+                      <SubtaskIcon size={13} />
+                      <span className="min-w-0 truncate">{context.parent}</span>
+                    </>
+                  )}
                 </span>
               )}
               {progress.total > 0 &&
@@ -1507,31 +1556,6 @@ function TaskRow({
               {taskLabels.map((l) => (
                 <LabelTag key={l.id} label={l} />
               ))}
-              {context && (
-                <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-muted">
-                  {context.parent && (
-                    <>
-                      <SubtaskIcon size={13} />
-                      <span className="min-w-0 truncate">{context.parent}</span>
-                      <span aria-hidden="true">·</span>
-                    </>
-                  )}
-                  {context.project ? (
-                    <>
-                      <span
-                        className="h-2 w-2 shrink-0 rounded-full"
-                        style={{ background: projectHex(context.project.color) }}
-                      />
-                      <span className="min-w-0 truncate">{context.project.name}</span>
-                    </>
-                  ) : (
-                    <>
-                      <ViewIcon view="inbox" size={13} />
-                      Entrada
-                    </>
-                  )}
-                </span>
-              )}
             </div>
           )}
         </div>
@@ -1545,7 +1569,7 @@ function TaskRow({
           <DotsIcon size={20} />
         </button>
         {/* Escritorio: las acciones aparecen al pasar por encima. Solo las pendientes admiten subtareas. */}
-        {tree && !t.done && (
+        {canAddSub && (
           <button
             ref={subButton}
             onClick={() => setAdding((a) => !a)}
@@ -1577,7 +1601,7 @@ function TaskRow({
       {menu && (
         <Dialog title={t.title} onClose={() => setMenu(false)}>
           <div className="-mx-2 flex flex-col">
-            {tree && !t.done && (
+            {canAddSub && (
               <button
                 onClick={() => {
                   setMenu(false);
@@ -1627,9 +1651,11 @@ function TaskRow({
               depth={depth + 1}
               today={today}
               tree={tree}
+              hideToday={hideToday}
               childrenOf={childrenOf}
               onToggle={onToggle}
               onEdit={onEdit}
+              onGoTo={onGoTo}
               onRemove={onRemove}
               onAddSubtask={onAddSubtask}
               commentCount={commentCount}

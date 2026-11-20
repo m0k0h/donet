@@ -228,6 +228,20 @@ create table if not exists public.shopping_section_memory (
   primary key (household_id, item_key)
 );
 
+-- Historial: cada artículo que sale del carro con «Terminar compra». Sirve para
+-- saber cuándo se compró algo por última vez y cada cuánto se suele comprar.
+create table if not exists public.shopping_purchases (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households (id) on delete cascade,
+  item_key text not null,
+  name text not null,
+  bought_by uuid references auth.users (id) on delete set null,
+  bought_at timestamptz not null default now()
+);
+
+create index if not exists shopping_purchases_item_idx
+  on public.shopping_purchases (household_id, item_key, bought_at desc);
+
 -- ¿La persona conectada pertenece al hogar? Con security definer para que las
 -- reglas de household_members no se llamen a sí mismas.
 create or replace function public.is_household_member(h uuid)
@@ -248,6 +262,7 @@ alter table public.household_members enable row level security;
 alter table public.household_invites enable row level security;
 alter table public.shopping_items enable row level security;
 alter table public.shopping_section_memory enable row level security;
+alter table public.shopping_purchases enable row level security;
 
 -- Hogares: los ven y renombran sus miembros.
 drop policy if exists "households_select_member" on public.households;
@@ -313,6 +328,15 @@ create policy "shopping_section_memory_update_member" on public.shopping_section
   for update to authenticated
   using (public.is_household_member(household_id))
   with check (public.is_household_member(household_id));
+
+-- Historial de compras: lo ve y lo apunta todo el hogar.
+drop policy if exists "shopping_purchases_select_member" on public.shopping_purchases;
+create policy "shopping_purchases_select_member" on public.shopping_purchases
+  for select to authenticated using (public.is_household_member(household_id));
+
+drop policy if exists "shopping_purchases_insert_member" on public.shopping_purchases;
+create policy "shopping_purchases_insert_member" on public.shopping_purchases
+  for insert to authenticated with check (public.is_household_member(household_id));
 
 -- Crea un hogar y mete dentro a quien lo crea.
 create or replace function public.create_household(household_name text, member_name text)

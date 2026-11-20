@@ -6,7 +6,6 @@ import { EmptyShopping } from "./EmptyShopping";
 import {
   DEFAULT_LIST_NAME,
   MAX_LISTS,
-  clearChecked,
   clearPendingInvite,
   createHousehold,
   createInvite,
@@ -14,7 +13,9 @@ import {
   fetchItems,
   fetchMembers,
   fetchMyHouseholds,
+  fetchPurchases,
   fetchSectionMemory,
+  finishShopping,
   insertItem,
   invitedHouseholdIfMember,
   isListLimit,
@@ -35,13 +36,14 @@ import {
   type Household,
   type ItemChanges,
   type Member,
+  type Purchase,
   type ShoppingItem,
 } from "@/lib/shopping";
 import { OTHER, SECTIONS, classifySection, itemKey, type SectionId, type SectionMemory } from "@/lib/sections";
 import ConfirmDialog from "./ConfirmDialog";
 import Dialog, { Select, fieldClass, labelClass } from "./Dialog";
 import PageHeader from "./PageHeader";
-import { CheckIcon, PencilIcon, PlusIcon, TrashIcon, UserPlusIcon } from "./icons";
+import { CheckIcon, InfoIcon, PencilIcon, PlusIcon, TrashIcon, UserPlusIcon } from "./icons";
 
 const btnPrimary = "min-h-11 rounded-lg bg-accent px-5 text-sm font-bold text-white disabled:opacity-40";
 const btnGhost = "min-h-11 rounded-lg px-4 text-sm font-semibold text-ink-soft hover:bg-track";
@@ -266,7 +268,8 @@ export function useShopping(userId: string | null | undefined) {
     toggle(item: ShoppingItem) {
       if (!userId) return;
       const checked = !item.checked;
-      setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, checked, checkedBy: checked ? userId : undefined } : x)));
+      const mark = checked ? { checkedBy: userId, checkedAt: Date.now() } : { checkedBy: undefined, checkedAt: undefined };
+      setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, checked, ...mark } : x)));
       sync(setItemChecked(item.id, checked, userId));
     },
 
@@ -288,12 +291,13 @@ export function useShopping(userId: string | null | undefined) {
       sync(deleteItem(item.id));
     },
 
-    // «Terminar compra»: quita lo que ya está en el carro de esta lista.
+    // «Terminar compra»: apunta en el historial lo del carro de esta lista y lo quita.
     finish() {
-      if (!current) return;
+      if (!current || !userId) return;
       const hid = current.id;
+      const cart = items.filter((x) => x.householdId === hid && x.checked);
       setItems((prev) => prev.filter((x) => !(x.householdId === hid && x.checked)));
-      sync(clearChecked(hid));
+      sync(finishShopping(hid, cart, userId));
     },
   };
 }
@@ -520,6 +524,7 @@ function ListTabs({ shop, currentId }: { shop: Shop; currentId: string }) {
 function ShoppingList({ shop, household, userId }: { shop: Shop; household: Household; userId: string }) {
   const [name, setName] = useState("");
   const [editing, setEditing] = useState<ShoppingItem | null>(null);
+  const [info, setInfo] = useState<ShoppingItem | null>(null);
   const [inviting, setInviting] = useState(false);
   const [settings, setSettings] = useState(false);
   const [confirm, setConfirm] = useState<{
@@ -658,7 +663,7 @@ function ShoppingList({ shop, household, userId }: { shop: Shop; household: Hous
                   <ItemRow
                     key={i.id}
                     item={i}
-                    addedBy={shared ? shop.memberName(i.addedBy) : undefined}
+                    onInfo={shared ? setInfo : undefined}
                     onToggle={shop.toggle}
                     onEdit={setEditing}
                     onRemove={askRemove}
@@ -687,7 +692,7 @@ function ShoppingList({ shop, household, userId }: { shop: Shop; household: Hous
               <ItemRow
                 key={i.id}
                 item={i}
-                checkedBy={shared && i.checkedBy !== userId ? shop.memberName(i.checkedBy) : undefined}
+                onInfo={shared ? setInfo : undefined}
                 onToggle={shop.toggle}
                 onEdit={setEditing}
                 onRemove={askRemove}
@@ -705,6 +710,16 @@ function ShoppingList({ shop, household, userId }: { shop: Shop; household: Hous
           onSave={(c, learn) => shop.save(editing, c, learn)}
           onRemove={() => askRemove(editing)}
           onClose={() => setEditing(null)}
+        />
+      )}
+
+      {info && (
+        <ItemInfoDialog
+          item={info}
+          section={SECTIONS.find((s) => s.id === shop.sectionOf(info))?.label ?? ""}
+          memberName={shop.memberName}
+          onEdit={() => setEditing(info)}
+          onClose={() => setInfo(null)}
         />
       )}
 
@@ -819,20 +834,17 @@ function Avatar({ name }: { name: string }) {
 
 function ItemRow({
   item,
-  addedBy,
-  checkedBy,
+  onInfo,
   onToggle,
   onEdit,
   onRemove,
 }: {
   item: ShoppingItem;
-  addedBy?: string;
-  checkedBy?: string;
+  onInfo?: (i: ShoppingItem) => void; // solo en listas compartidas: quién, cuándo, historial
   onToggle: (i: ShoppingItem) => void;
   onEdit: (i: ShoppingItem) => void;
   onRemove: (i: ShoppingItem) => void;
 }) {
-  const meta = [item.note, addedBy && `Añadido por ${addedBy}`, checkedBy && `Lo cogió ${checkedBy}`].filter(Boolean);
   return (
     <li className="group flex items-center gap-1 border-b border-line">
       <button
@@ -861,19 +873,29 @@ function ItemRow({
             </span>
           )}
         </span>
-        {meta.length > 0 && <span className="text-[13px] text-muted">{meta.join(" · ")}</span>}
+        {item.note && <span className="break-words text-[13px] text-muted">{item.note}</span>}
       </button>
+      {onInfo && (
+        <button
+          onClick={() => onInfo(item)}
+          aria-label={`Información de ${item.name}`}
+          title="Quién lo añadió y cuándo se compró"
+          className="grid h-11 w-9 md:w-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-track hover:text-ink"
+        >
+          <InfoIcon size={18} />
+        </button>
+      )}
       <button
         onClick={() => onEdit(item)}
         aria-label={`Editar ${item.name}`}
-        className="hidden h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track md:group-hover:grid"
+        className="hidden h-11 w-9 md:w-8 shrink-0 place-items-center rounded-lg text-ink-soft hover:bg-track md:group-hover:grid"
       >
         <PencilIcon size={18} />
       </button>
       <button
         onClick={() => onRemove(item)}
         aria-label={`Quitar ${item.name}`}
-        className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-muted hover:bg-track hover:text-danger"
+        className="grid h-11 w-9 md:w-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-track hover:text-danger"
       >
         <TrashIcon size={18} />
       </button>
@@ -981,6 +1003,145 @@ function ItemDialog({
         </div>
       </form>
     </Dialog>
+  );
+}
+
+const relative = new Intl.RelativeTimeFormat("es", { numeric: "auto" });
+const fullDate = new Intl.DateTimeFormat("es", { dateStyle: "long", timeStyle: "short" });
+const DAY = 86_400_000;
+
+// «hace 5 minutos», «ayer», «hace 3 semanas»…
+const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ["year", 31_557_600],
+  ["month", 2_629_800],
+  ["week", 604_800],
+  ["day", 86_400],
+  ["hour", 3_600],
+  ["minute", 60],
+];
+
+function ago(ms: number) {
+  const s = (ms - Date.now()) / 1000;
+  for (const [unit, size] of UNITS) if (Math.abs(s) >= size) return relative.format(Math.round(s / size), unit);
+  return "ahora mismo";
+}
+
+// Cada cuánto se compra, a partir de las compras guardadas (hacen falta 3).
+function frequency(p: Purchase[]) {
+  if (p.length < 3) return undefined;
+  const days = (p[0].boughtAt - p[p.length - 1].boughtAt) / DAY / (p.length - 1);
+  if (days < 1.5) return "Casi cada día";
+  if (days < 10) return `Cada ${Math.round(days)} días, más o menos`;
+  if (days < 60) return `Cada ${Math.round(days / 7)} semanas, más o menos`;
+  return `Cada ${Math.round(days / 30)} meses, más o menos`;
+}
+
+// Quién lo compra casi siempre (al menos 3 compras y 2 de cada 3 suyas).
+function usualBuyer(p: Purchase[]) {
+  if (p.length < 3) return undefined;
+  const count = new Map<string, number>();
+  for (const x of p) if (x.boughtBy) count.set(x.boughtBy, (count.get(x.boughtBy) ?? 0) + 1);
+  const [id, n] = [...count].sort((a, b) => b[1] - a[1])[0] ?? [];
+  return id && n! / p.length >= 2 / 3 ? id : undefined;
+}
+
+// Ficha de un artículo en una lista compartida: quién lo apuntó, quién lo cogió e historial.
+function ItemInfoDialog({
+  item,
+  section,
+  memberName,
+  onEdit,
+  onClose,
+}: {
+  item: ShoppingItem;
+  section: string;
+  memberName: (id?: string) => string | undefined;
+  onEdit: () => void;
+  onClose: () => void;
+}) {
+  // undefined = cargando, null = no se pudo cargar.
+  const [purchases, setPurchases] = useState<Purchase[] | null | undefined>(undefined);
+
+  useEffect(() => {
+    fetchPurchases(item.householdId, item.name)
+      .then(setPurchases)
+      .catch(() => setPurchases(null));
+  }, [item.householdId, item.name]);
+
+  const who = (id?: string) => memberName(id) ?? "Alguien que ya no está";
+  const last = purchases?.[0];
+  const buyer = purchases ? usualBuyer(purchases) : undefined;
+  const often = purchases ? frequency(purchases) : undefined;
+
+  return (
+    <Dialog title={item.name} onClose={onClose}>
+      <dl className="flex flex-col gap-3 text-[15px]">
+        <InfoRow label="Lo apuntó">
+          {who(item.addedBy)} · <time title={fullDate.format(item.createdAt)}>{ago(item.createdAt)}</time>
+        </InfoRow>
+        {item.checked && (
+          <InfoRow label="Lo cogió">
+            {who(item.checkedBy)}
+            {item.checkedAt && (
+              <>
+                {" · "}
+                <time title={fullDate.format(item.checkedAt)}>{ago(item.checkedAt)}</time>
+              </>
+            )}
+          </InfoRow>
+        )}
+        <InfoRow label="Sección">{section}</InfoRow>
+      </dl>
+
+      <div className="flex flex-col gap-3 border-t border-line pt-4">
+        <h3 className="text-sm font-bold text-muted">Historial</h3>
+        {purchases === undefined ? (
+          <p className="text-sm text-muted">Cargando…</p>
+        ) : purchases === null ? (
+          <p className="text-sm font-semibold text-danger">No se ha podido cargar el historial.</p>
+        ) : !last ? (
+          <p className="text-sm text-ink-soft">
+            Aún no se ha comprado. Cada vez que pulséis «Terminar compra» se apunta aquí.
+          </p>
+        ) : (
+          <dl className="flex flex-col gap-3 text-[15px]">
+            <InfoRow label="Última compra">
+              <time title={fullDate.format(last.boughtAt)}>{ago(last.boughtAt)}</time> · {who(last.boughtBy)}
+            </InfoRow>
+            <InfoRow label="Veces comprado">
+              {purchases.length >= 100 ? "Más de 100" : purchases.length === 1 ? "1 vez" : `${purchases.length} veces`}
+            </InfoRow>
+            {often && <InfoRow label="Frecuencia">{often}</InfoRow>}
+            {buyer && <InfoRow label="Suele comprarlo">{who(buyer)}</InfoRow>}
+          </dl>
+        )}
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            onEdit();
+          }}
+          className={btnGhost}
+        >
+          Editar
+        </button>
+        <button type="button" onClick={onClose} className={btnPrimary}>
+          Cerrar
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <dt className="shrink-0 text-sm text-muted">{label}</dt>
+      <dd className="text-right font-medium">{children}</dd>
+    </div>
   );
 }
 

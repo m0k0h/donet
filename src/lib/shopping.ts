@@ -1,5 +1,5 @@
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
-import { isSectionId, type SectionId, type SectionMemory } from "./sections";
+import { isSectionId, itemKey, type SectionId, type SectionMemory } from "./sections";
 import { supabase } from "./supabase";
 
 // Una lista de la compra. Empieza como «Mi lista»; al compartirla pasa a «Compartida».
@@ -33,6 +33,7 @@ export type ShoppingItem = {
   checked: boolean;
   addedBy?: string;
   checkedBy?: string;
+  checkedAt?: number;
   createdAt: number;
 };
 
@@ -46,6 +47,7 @@ type ItemRow = {
   checked: boolean;
   added_by: string | null;
   checked_by: string | null;
+  checked_at: string | null;
   created_at: string;
 };
 
@@ -59,6 +61,7 @@ export const itemFromRow = (r: ItemRow): ShoppingItem => ({
   checked: r.checked,
   addedBy: r.added_by ?? undefined,
   checkedBy: r.checked_by ?? undefined,
+  checkedAt: r.checked_at ? Date.parse(r.checked_at) : undefined,
   createdAt: Date.parse(r.created_at),
 });
 
@@ -277,10 +280,37 @@ export async function rememberSection(householdId: string, itemKey: string, sect
   if (error) throw error;
 }
 
-// «Terminar compra»: quita de la lista todo lo que ya está en el carro.
-export async function clearChecked(householdId: string) {
+// «Terminar compra»: apunta en el historial lo que hay en el carro y lo quita de la lista.
+export async function finishShopping(householdId: string, inCart: ShoppingItem[], userId: string) {
+  if (inCart.length) {
+    const { error } = await supabase!.from("shopping_purchases").insert(
+      inCart.map((i) => ({
+        household_id: householdId,
+        item_key: itemKey(i.name) || i.name.toLocaleLowerCase("es"),
+        name: i.name,
+        bought_by: i.checkedBy ?? userId,
+        bought_at: new Date(i.checkedAt ?? Date.now()).toISOString(),
+      })),
+    );
+    if (error) throw error;
+  }
   const { error } = await supabase!.from("shopping_items").delete().eq("household_id", householdId).eq("checked", true);
   if (error) throw error;
+}
+
+export type Purchase = { boughtBy?: string; boughtAt: number };
+
+// Veces que se ha comprado un artículo en una lista, de la más reciente a la más antigua.
+export async function fetchPurchases(householdId: string, name: string): Promise<Purchase[]> {
+  const { data, error } = await supabase!
+    .from("shopping_purchases")
+    .select("bought_by, bought_at")
+    .eq("household_id", householdId)
+    .eq("item_key", itemKey(name) || name.toLocaleLowerCase("es"))
+    .order("bought_at", { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  return data.map((r) => ({ boughtBy: r.bought_by ?? undefined, boughtAt: Date.parse(r.bought_at) }));
 }
 
 // Escucha los cambios en todas las listas de la persona: las reglas de seguridad

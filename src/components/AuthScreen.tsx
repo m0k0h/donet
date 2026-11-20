@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Logo from "./Logo";
@@ -13,7 +14,11 @@ const ERRORS: Record<string, string> = {
 };
 
 export default function AuthScreen() {
-  const [mode, setMode] = useState<"in" | "up">("in");
+  // Desde «Crear cuenta» de la portada se llega con ?registro y se abre el registro.
+  // Esta pantalla solo se pinta en el navegador, así que puede leer la dirección al empezar.
+  const [mode, setMode] = useState<"in" | "up">(() =>
+    new URLSearchParams(window.location.search).has("registro") ? "up" : "in",
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,7 +43,9 @@ export default function AuthScreen() {
   return (
     <div data-space="personal" className="grid min-h-dvh place-items-center px-4">
       <form onSubmit={submit} className="flex w-full max-w-sm flex-col gap-4 rounded-xl bg-sunk p-6">
-        <Logo size={28} surface="var(--sunk)" />
+        <Link href="/" aria-label="Qué es doneT" className="self-start">
+          <Logo size={28} surface="var(--sunk)" />
+        </Link>
         <h1 className="text-xl font-extrabold tracking-[-0.02em]">
           {mode === "in" ? "Inicia sesión" : "Crea tu cuenta"}
         </h1>

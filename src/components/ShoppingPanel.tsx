@@ -792,8 +792,9 @@ function ListSettingsDialog({
         </label>
         {shared && (
           <p className="text-[15px] text-ink-soft">
-            Aquí te ven como <strong className="text-ink">{myName || "tú"}</strong>. Tu nombre se cambia en Ajustes, junto
-            al tema.
+            Aquí te ven como <strong className="text-ink">{myName || "tú"}</strong>.
+            <br />
+            Tu nombre se cambia en Ajustes, junto al tema.
           </p>
         )}
         <div className="flex items-center justify-between gap-2 pt-1">

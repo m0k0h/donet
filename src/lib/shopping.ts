@@ -1,4 +1,5 @@
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
+import { isSectionId, type SectionId, type SectionMemory } from "./sections";
 import { supabase } from "./supabase";
 
 // Una lista de la compra. Empieza como «Mi lista»; al compartirla pasa a «Compartida».
@@ -28,6 +29,7 @@ export type ShoppingItem = {
   name: string;
   quantity?: string; // texto libre: «2», «1 kg», «un paquete»
   note?: string;
+  section?: SectionId; // sin ella, se clasifica al mostrarla
   checked: boolean;
   addedBy?: string;
   checkedBy?: string;
@@ -40,6 +42,7 @@ type ItemRow = {
   name: string;
   quantity: string | null;
   note: string | null;
+  section: string | null;
   checked: boolean;
   added_by: string | null;
   checked_by: string | null;
@@ -52,6 +55,7 @@ export const itemFromRow = (r: ItemRow): ShoppingItem => ({
   name: r.name,
   quantity: r.quantity ?? undefined,
   note: r.note ?? undefined,
+  section: isSectionId(r.section) ? r.section : undefined,
   checked: r.checked,
   addedBy: r.added_by ?? undefined,
   checkedBy: r.checked_by ?? undefined,
@@ -219,15 +223,18 @@ export async function insertItem(i: ShoppingItem) {
     name: i.name,
     quantity: i.quantity ?? null,
     note: i.note ?? null,
+    section: i.section ?? null,
     created_at: new Date(i.createdAt).toISOString(),
   });
   if (error) throw error;
 }
 
-export async function updateItem(id: string, c: Pick<ShoppingItem, "name" | "quantity" | "note">) {
+export type ItemChanges = Pick<ShoppingItem, "name" | "quantity" | "note" | "section">;
+
+export async function updateItem(id: string, c: ItemChanges) {
   const { error } = await supabase!
     .from("shopping_items")
-    .update({ name: c.name, quantity: c.quantity ?? null, note: c.note ?? null })
+    .update({ name: c.name, quantity: c.quantity ?? null, note: c.note ?? null, section: c.section ?? null })
     .eq("id", id);
   if (error) throw error;
 }
@@ -242,6 +249,31 @@ export async function setItemChecked(id: string, checked: boolean, userId: strin
 
 export async function deleteItem(id: string) {
   const { error } = await supabase!.from("shopping_items").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// Secciones corregidas a mano en cada lista: { idDeLista: { claveDelArtículo: sección } }.
+export async function fetchSectionMemory(householdIds: string[]): Promise<Record<string, SectionMemory>> {
+  if (!householdIds.length) return {};
+  const { data, error } = await supabase!
+    .from("shopping_section_memory")
+    .select("household_id, item_key, section")
+    .in("household_id", householdIds);
+  if (error) throw error;
+  const memory: Record<string, SectionMemory> = {};
+  for (const r of data) {
+    if (isSectionId(r.section)) (memory[r.household_id] ??= {})[r.item_key] = r.section;
+  }
+  return memory;
+}
+
+export async function rememberSection(householdId: string, itemKey: string, section: SectionId) {
+  const { error } = await supabase!
+    .from("shopping_section_memory")
+    .upsert(
+      { household_id: householdId, item_key: itemKey, section, updated_at: new Date().toISOString() },
+      { onConflict: "household_id,item_key" },
+    );
   if (error) throw error;
 }
 

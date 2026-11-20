@@ -216,6 +216,18 @@ create table if not exists public.shopping_items (
 
 create index if not exists shopping_items_household_id_idx on public.shopping_items (household_id);
 
+-- Sección del súper de cada artículo (src/lib/sections.ts). Vacía = sin clasificar («Otros»).
+alter table public.shopping_items add column if not exists section text;
+
+-- Lo que cada hogar ha corregido a mano: «pienso» va en Mascotas. Manda sobre el diccionario.
+create table if not exists public.shopping_section_memory (
+  household_id uuid not null references public.households (id) on delete cascade,
+  item_key text not null,
+  section text not null,
+  updated_at timestamptz not null default now(),
+  primary key (household_id, item_key)
+);
+
 -- ¿La persona conectada pertenece al hogar? Con security definer para que las
 -- reglas de household_members no se llamen a sí mismas.
 create or replace function public.is_household_member(h uuid)
@@ -235,6 +247,7 @@ alter table public.households enable row level security;
 alter table public.household_members enable row level security;
 alter table public.household_invites enable row level security;
 alter table public.shopping_items enable row level security;
+alter table public.shopping_section_memory enable row level security;
 
 -- Hogares: los ven y renombran sus miembros.
 drop policy if exists "households_select_member" on public.households;
@@ -285,6 +298,21 @@ create policy "shopping_items_update_member" on public.shopping_items
 drop policy if exists "shopping_items_delete_member" on public.shopping_items;
 create policy "shopping_items_delete_member" on public.shopping_items
   for delete to authenticated using (public.is_household_member(household_id));
+
+-- Memoria de secciones: la comparte todo el hogar.
+drop policy if exists "shopping_section_memory_select_member" on public.shopping_section_memory;
+create policy "shopping_section_memory_select_member" on public.shopping_section_memory
+  for select to authenticated using (public.is_household_member(household_id));
+
+drop policy if exists "shopping_section_memory_insert_member" on public.shopping_section_memory;
+create policy "shopping_section_memory_insert_member" on public.shopping_section_memory
+  for insert to authenticated with check (public.is_household_member(household_id));
+
+drop policy if exists "shopping_section_memory_update_member" on public.shopping_section_memory;
+create policy "shopping_section_memory_update_member" on public.shopping_section_memory
+  for update to authenticated
+  using (public.is_household_member(household_id))
+  with check (public.is_household_member(household_id));
 
 -- Crea un hogar y mete dentro a quien lo crea.
 create or replace function public.create_household(household_name text, member_name text)

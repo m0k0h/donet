@@ -14,6 +14,7 @@ import {
   fetchItems,
   fetchMembers,
   fetchMyHouseholds,
+  fetchSectionMemory,
   insertItem,
   invitedHouseholdIfMember,
   isListLimit,
@@ -24,6 +25,7 @@ import {
   loadHouseholdId,
   loadPendingInvite,
   nextListName,
+  rememberSection,
   renameHousehold,
   saveHouseholdId,
   setItemChecked,
@@ -31,11 +33,13 @@ import {
   subscribeItems,
   updateItem,
   type Household,
+  type ItemChanges,
   type Member,
   type ShoppingItem,
 } from "@/lib/shopping";
+import { OTHER, SECTIONS, classifySection, itemKey, type SectionId, type SectionMemory } from "@/lib/sections";
 import ConfirmDialog from "./ConfirmDialog";
-import Dialog, { fieldClass, labelClass } from "./Dialog";
+import Dialog, { Select, fieldClass, labelClass } from "./Dialog";
 import PageHeader from "./PageHeader";
 import { CheckIcon, PencilIcon, PlusIcon, TrashIcon, UserPlusIcon } from "./icons";
 
@@ -63,6 +67,8 @@ export function useShopping(userId: string | null | undefined) {
   const [invite, setInvite] = useState<string | null>(null);
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  // Secciones corregidas a mano, por lista.
+  const [memory, setMemory] = useState<Record<string, SectionMemory>>({});
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -92,10 +98,11 @@ export function useShopping(userId: string | null | undefined) {
         }
       }
       const ids = hs.map((h) => h.id);
-      const [i, m] = await Promise.all([fetchItems(ids), fetchMembers(ids)]);
+      const [i, m, sm] = await Promise.all([fetchItems(ids), fetchMembers(ids), fetchSectionMemory(ids)]);
       setHouseholds(hs);
       setItems(i);
       setMembers(m);
+      setMemory(sm);
       setError("");
     } catch {
       setError("No se ha podido cargar la lista de la compra. Comprueba la conexión.");
@@ -108,6 +115,7 @@ export function useShopping(userId: string | null | undefined) {
       setHouseholds(undefined);
       setItems([]);
       setMembers([]);
+      setMemory({});
       setLoaded(false);
       return;
     }
@@ -162,6 +170,9 @@ export function useShopping(userId: string | null | undefined) {
   const pendingIn = (householdId: string) => items.filter((i) => i.householdId === householdId && !i.checked).length;
   const memberName = (id?: string) => currentMembers.find((m) => m.userId === id)?.name;
   const myName = (current && currentMembers.find((m) => m.userId === userId)?.name) || undefined;
+  const currentMemory = current ? memory[current.id] : undefined;
+  // Sección que propone la lista actual para un nombre (memoria del hogar y diccionario).
+  const classify = (name: string) => classifySection(name, currentMemory);
 
   function select(id: string) {
     saveHouseholdId(id);
@@ -186,6 +197,10 @@ export function useShopping(userId: string | null | undefined) {
     myName,
     select,
     reload,
+    classify,
+    // La guardada en el artículo; si no tiene (los de antes), la que toque por el nombre.
+    sectionOf: (item: ShoppingItem): SectionId =>
+      item.section ?? classifySection(item.name, memory[item.householdId]) ?? OTHER,
 
     // Tras unirse a una lista por invitación: se carga y se abre.
     async joined(id: string) {
@@ -241,6 +256,7 @@ export function useShopping(userId: string | null | undefined) {
         name,
         checked: false,
         addedBy: userId,
+        section: classify(name),
         createdAt: Date.now(),
       };
       setItems((prev) => [...prev, item]);
@@ -254,9 +270,17 @@ export function useShopping(userId: string | null | undefined) {
       sync(setItemChecked(item.id, checked, userId));
     },
 
-    save(item: ShoppingItem, c: Pick<ShoppingItem, "name" | "quantity" | "note">) {
+    // learn: la sección se ha elegido a mano, así que se recuerda para la próxima vez.
+    save(item: ShoppingItem, c: ItemChanges, learn = false) {
       setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, ...c } : x)));
       sync(updateItem(item.id, c));
+      const key = itemKey(c.name);
+      if (learn && c.section && key) {
+        const hid = item.householdId;
+        const section = c.section;
+        setMemory((prev) => ({ ...prev, [hid]: { ...prev[hid], [key]: section } }));
+        sync(rememberSection(hid, key, section));
+      }
     },
 
     remove(item: ShoppingItem) {
@@ -509,6 +533,10 @@ function ShoppingList({ shop, household, userId }: { shop: Shop; household: Hous
   const sorted = sortItems(shop.items);
   const pending = sorted.filter((i) => !i.checked);
   const inCart = sorted.filter((i) => i.checked);
+  // Lo pendiente, por secciones en el orden de la tienda.
+  const groups = SECTIONS.map((s) => ({ ...s, items: pending.filter((i) => shop.sectionOf(i) === s.id) })).filter(
+    (g) => g.items.length > 0,
+  );
   const shared = shop.members.length > 1;
   // Con quién compartes esta lista (sin contarte a ti).
   const others = shop.members.filter((m) => m.userId !== userId).map((m) => m.name);
@@ -618,19 +646,28 @@ function ShoppingList({ shop, household, userId }: { shop: Shop; household: Hous
 
       {shop.loaded && shop.items.length === 0 && <EmptyShopping shared={shared} />}
 
-      {pending.length > 0 && (
-        <ul className="flex flex-col">
-          {pending.map((i) => (
-            <ItemRow
-              key={i.id}
-              item={i}
-              addedBy={shared ? shop.memberName(i.addedBy) : undefined}
-              onToggle={shop.toggle}
-              onEdit={setEditing}
-              onRemove={askRemove}
-            />
+      {groups.length > 0 && (
+        <div className="flex flex-col gap-5">
+          {groups.map((g) => (
+            <section key={g.id} aria-labelledby={`seccion-${g.id}`} className="flex flex-col">
+              <h2 id={`seccion-${g.id}`} className="text-sm font-bold text-muted">
+                {g.label} · {g.items.length}
+              </h2>
+              <ul className="flex flex-col">
+                {g.items.map((i) => (
+                  <ItemRow
+                    key={i.id}
+                    item={i}
+                    addedBy={shared ? shop.memberName(i.addedBy) : undefined}
+                    onToggle={shop.toggle}
+                    onEdit={setEditing}
+                    onRemove={askRemove}
+                  />
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
       )}
 
       {shop.loaded && shop.items.length > 0 && pending.length === 0 && (
@@ -663,7 +700,9 @@ function ShoppingList({ shop, household, userId }: { shop: Shop; household: Hous
       {editing && (
         <ItemDialog
           item={editing}
-          onSave={(c) => shop.save(editing, c)}
+          section={shop.sectionOf(editing)}
+          classify={shop.classify}
+          onSave={(c, learn) => shop.save(editing, c, learn)}
           onRemove={() => askRemove(editing)}
           onClose={() => setEditing(null)}
         />
@@ -844,22 +883,38 @@ function ItemRow({
 
 function ItemDialog({
   item,
+  section: initialSection,
+  classify,
   onSave,
   onRemove,
   onClose,
 }: {
   item: ShoppingItem;
-  onSave: (c: Pick<ShoppingItem, "name" | "quantity" | "note">) => void;
+  section: SectionId;
+  classify: (name: string) => SectionId | undefined;
+  onSave: (c: ItemChanges, learn: boolean) => void;
   onRemove: () => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState(item.name);
   const [quantity, setQuantity] = useState(item.quantity ?? "");
   const [note, setNote] = useState(item.note ?? "");
+  const [section, setSection] = useState(initialSection);
+  // Elegida a mano: ya no sigue al nombre y se recuerda al guardar.
+  const [picked, setPicked] = useState(false);
+
+  function changeName(v: string) {
+    setName(v);
+    const s = picked ? undefined : classify(v);
+    if (s) setSection(s);
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    onSave({ name: name.trim(), quantity: quantity.trim() || undefined, note: note.trim() || undefined });
+    onSave(
+      { name: name.trim(), quantity: quantity.trim() || undefined, note: note.trim() || undefined, section },
+      picked,
+    );
     onClose();
   }
 
@@ -868,7 +923,23 @@ function ItemDialog({
       <form onSubmit={submit} className="flex flex-col gap-4">
         <label className={labelClass}>
           Artículo
-          <input required value={name} onChange={(e) => setName(e.target.value)} className={fieldClass} />
+          <input required value={name} onChange={(e) => changeName(e.target.value)} className={fieldClass} />
+        </label>
+        <label className={labelClass}>
+          Sección
+          <Select
+            value={section}
+            onChange={(e) => {
+              setSection(e.target.value as SectionId);
+              setPicked(true);
+            }}
+          >
+            {SECTIONS.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </Select>
         </label>
         <label className={labelClass}>
           Cantidad

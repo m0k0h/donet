@@ -36,6 +36,7 @@ Está publicado en GitHub Pages: https://m0k0h.github.io/donet/
 ### Listas de la compra
 - Integradas en Personal, con el número de cosas por comprar
 - Se comparten con un enlace (caduca en 7 días) y los cambios se ven al momento en todos los móviles
+- Lo que hay por comprar se agrupa por **secciones del súper** (fruta y verdura, carne, lácteos…) en el orden de la tienda. Se clasifica solo con un diccionario; si mueves un artículo de sección al editarlo, la lista lo recuerda para la próxima vez
 - Cantidad y nota opcionales, aviso si algo ya está en la lista, y «Terminar compra» quita lo que ya está en el carro
 
 ### Diseño
@@ -117,6 +118,7 @@ src/
     naturalDate.ts      Fechas y horas en lenguaje natural
     google.ts           Calendarios y eventos de Google
     shopping.ts         Listas de la compra
+    sections.ts         Secciones del súper y clasificación de artículos
     theme.ts            Modo claro y oscuro
 supabase/schema.sql     Esquema completo de la base de datos
 ```

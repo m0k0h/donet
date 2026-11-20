@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { sessionProfileName } from "@/lib/profile";
 import { EmptyShopping } from "./EmptyShopping";
 import {
   DEFAULT_LIST_NAME,
@@ -25,7 +25,6 @@ import {
   loadPendingInvite,
   nextListName,
   renameHousehold,
-  renameMember,
   saveHouseholdId,
   setItemChecked,
   sortItems,
@@ -43,18 +42,10 @@ import { CheckIcon, PencilIcon, PlusIcon, TrashIcon, UserPlusIcon } from "./icon
 const btnPrimary = "min-h-11 rounded-lg bg-accent px-5 text-sm font-bold text-white disabled:opacity-40";
 const btnGhost = "min-h-11 rounded-lg px-4 text-sm font-semibold text-ink-soft hover:bg-track";
 
-// Nombre por defecto para el resto de la lista: lo que va antes de la @ del correo.
-const nameFromEmail = (email?: string) => {
-  const n = (email ?? "").split("@")[0].replace(/[._-]+/g, " ").trim();
-  return n ? n[0].toUpperCase() + n.slice(1) : "";
-};
+// Nombre por defecto para el resto de la lista: el de Ajustes o, si no hay, el del correo.
+const sessionName = sessionProfileName;
 
-async function sessionName() {
-  const { data } = await supabase!.auth.getSession();
-  return nameFromEmail(data.session?.user.email) || "Yo";
-}
-
-// Propone el nombre a partir del correo de la sesión, sin pisar lo que ya se haya escrito.
+// Propone tu nombre de Ajustes (o el del correo), sin pisar lo que ya se haya escrito.
 function useDefaultName(): [string, (v: string) => void] {
   const [name, setName] = useState("");
   useEffect(() => {
@@ -194,6 +185,7 @@ export function useShopping(userId: string | null | undefined) {
     memberName,
     myName,
     select,
+    reload,
 
     // Tras unirse a una lista por invitación: se carga y se abre.
     async joined(id: string) {
@@ -226,13 +218,6 @@ export function useShopping(userId: string | null | undefined) {
     rename(id: string, name: string) {
       setHouseholds((prev) => prev?.map((h) => (h.id === id ? { ...h, name } : h)));
       sync(renameHousehold(id, name));
-    },
-
-    renameMe(name: string) {
-      if (!current || !userId) return;
-      const hid = current.id;
-      setMembers((prev) => prev.map((m) => (m.householdId === hid && m.userId === userId ? { ...m, name } : m)));
-      sync(renameMember(hid, userId, name));
     },
 
     leave(id: string) {
@@ -698,9 +683,8 @@ function ShoppingList({ shop, household, userId }: { shop: Shop; household: Hous
           household={household}
           myName={shop.myName ?? ""}
           shared={shared}
-          onSave={(listName, me) => {
+          onSave={(listName) => {
             if (listName !== household.name) shop.rename(household.id, listName);
-            if (me && me !== shop.myName) shop.renameMe(me);
           }}
           onLeave={askLeave}
           onClose={() => setSettings(false)}
@@ -721,7 +705,7 @@ function ShoppingList({ shop, household, userId }: { shop: Shop; household: Hous
   );
 }
 
-// Renombrar la lista (lo ve todo el mundo), cambiar tu nombre en ella o salir.
+// Renombrar la lista (lo ve todo el mundo) o salir. Tu nombre se cambia en Ajustes.
 function ListSettingsDialog({
   household,
   myName,
@@ -733,16 +717,15 @@ function ListSettingsDialog({
   household: Household;
   myName: string;
   shared: boolean;
-  onSave: (listName: string, me: string) => void;
+  onSave: (listName: string) => void;
   onLeave: () => void;
   onClose: () => void;
 }) {
   const [listName, setListName] = useState(household.name);
-  const [me, setMe] = useState(myName);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    onSave(listName.trim(), me.trim());
+    onSave(listName.trim());
     onClose();
   }
 
@@ -754,10 +737,10 @@ function ListSettingsDialog({
           <input required value={listName} onChange={(e) => setListName(e.target.value)} className={fieldClass} />
         </label>
         {shared && (
-          <label className={labelClass}>
-            Tu nombre en esta lista
-            <input required value={me} onChange={(e) => setMe(e.target.value)} className={fieldClass} />
-          </label>
+          <p className="text-[15px] text-ink-soft">
+            Aquí te ven como <strong className="text-ink">{myName || "tú"}</strong>. Tu nombre se cambia en Ajustes, junto
+            al tema.
+          </p>
         )}
         <div className="flex items-center justify-between gap-2 pt-1">
           <button
@@ -774,7 +757,7 @@ function ListSettingsDialog({
             <button type="button" onClick={onClose} className={btnGhost}>
               Cancelar
             </button>
-            <button type="submit" disabled={!listName.trim() || (shared && !me.trim())} className={btnPrimary}>
+            <button type="submit" disabled={!listName.trim()} className={btnPrimary}>
               Guardar
             </button>
           </div>

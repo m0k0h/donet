@@ -59,6 +59,7 @@ import {
 } from "@/lib/supabase";
 import { consumeOpenShopping, loadPendingInvite } from "@/lib/shopping";
 import { consumeReopenSettings } from "@/lib/google";
+import { MAX_NAME_LENGTH, profileName, saveProfileName } from "@/lib/profile";
 import { EVENT_DAYS, EventList, eventsByDay, useCalendarEvents } from "./CalendarEvents";
 import { GoogleCalendarsSettings } from "./GoogleCalendars";
 import AuthScreen from "./AuthScreen";
@@ -67,7 +68,7 @@ import ConfirmDialog from "./ConfirmDialog";
 import { DetectedDateChip, useDetectedDate } from "./DetectedDate";
 import { EmptyFilter } from "./EmptyFilter";
 import { EmptyInbox } from "./EmptyInbox";
-import Dialog from "./Dialog";
+import Dialog, { fieldClass } from "./Dialog";
 import LabelDialog from "./LabelDialog";
 import { LabelList, LabelTag, TypedLabels } from "./Labels";
 import Logo from "./Logo";
@@ -185,20 +186,33 @@ function saveHideEvents(hide: boolean) {
   } catch {}
 }
 
-// Cuenta con la que se ha entrado y la rueda que abre Ajustes (tema, cerrar sesión y lo que venga).
-function AccountCard({ email, onSettings, className = "" }: { email: string; onSettings: () => void; className?: string }) {
+// Cuenta con la que se ha entrado y la rueda que abre Ajustes (nombre, tema, cerrar sesión y lo que venga).
+function AccountCard({
+  name,
+  email,
+  onSettings,
+  className = "",
+}: {
+  name: string;
+  email: string;
+  onSettings: () => void;
+  className?: string;
+}) {
+  const shown = name || email;
   return (
     <div className={`flex items-center gap-3 rounded-xl py-2 pl-3 pr-1.5 ${className}`}>
       <span
         aria-hidden="true"
         className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent text-base font-bold uppercase text-white"
       >
-        {email.charAt(0) || "?"}
+        {shown.charAt(0) || "?"}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-semibold text-muted">Tu cuenta</p>
-        <p className="truncate text-[15px] font-bold" title={email || undefined}>
-          {email || "Sesión iniciada"}
+        <p className="truncate text-[15px] font-bold" title={shown || undefined}>
+          {shown || "Sesión iniciada"}
+        </p>
+        <p className="truncate text-[13px] font-semibold text-muted" title={email || undefined}>
+          {name ? email : "Tu cuenta"}
         </p>
       </div>
       <button
@@ -210,6 +224,60 @@ function AccountCard({ email, onSettings, className = "" }: { email: string; onS
         <GearIcon size={22} />
       </button>
     </div>
+  );
+}
+
+// Ajustes → Tu nombre: el que ven los demás en las listas compartidas.
+function NameSettings({ name, onSaved }: { name: string; onSaved: () => void }) {
+  const [value, setValue] = useState(name);
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const trimmed = value.trim();
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!trimmed || trimmed === name) return;
+    setState("saving");
+    try {
+      await saveProfileName(trimmed);
+      setState("saved");
+      onSaved();
+    } catch {
+      setState("error");
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="text-[13px] font-bold uppercase tracking-wide text-muted">Tu nombre</h3>
+      <form onSubmit={submit} className="flex gap-2">
+        <input
+          aria-label="Tu nombre"
+          data-no-autofocus
+          value={value}
+          maxLength={MAX_NAME_LENGTH}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setState("idle");
+          }}
+          autoComplete="nickname"
+          className={`${fieldClass} min-w-0 flex-1`}
+        />
+        <button
+          type="submit"
+          disabled={!trimmed || trimmed === name || state === "saving"}
+          className="min-h-11 shrink-0 rounded-lg bg-accent px-4 text-sm font-bold text-white disabled:opacity-40"
+        >
+          Guardar
+        </button>
+      </form>
+      <p className={`text-[13px] ${state === "error" ? "text-danger" : "text-muted"}`} aria-live="polite">
+        {state === "error"
+          ? "No se ha podido guardar. Comprueba la conexión."
+          : state === "saved"
+            ? "Guardado. Ya te ven así en tus listas compartidas."
+            : "Es el nombre con el que te ven en las listas compartidas."}
+      </p>
+    </section>
   );
 }
 
@@ -286,6 +354,8 @@ function Tasks({ space }: { space: Space }) {
   // undefined = comprobando sesión, null = sin sesión.
   const [userId, setUserId] = useState<string | null | undefined>(undefined);
   const [email, setEmail] = useState("");
+  // Nombre visible: el elegido en Ajustes o, si no hay, el del correo.
+  const [name, setName] = useState("");
   const [syncError, setSyncError] = useState("");
   // Recién completadas: se ven tachadas un momento antes de irse de la lista.
   const [justDone, setJustDone] = useState<Set<string>>(new Set());
@@ -348,6 +418,7 @@ function Tasks({ space }: { space: Space }) {
     const { data } = supabase!.auth.onAuthStateChange((_event, session) => {
       setUserId(session?.user.id ?? null);
       setEmail(session?.user.email ?? "");
+      setName(profileName(session?.user));
     });
     return () => data.subscription.unsubscribe();
   }, []);
@@ -895,7 +966,7 @@ function Tasks({ space }: { space: Space }) {
         {labelList}
         {/* Cuenta con la que se ha entrado y la rueda de Ajustes, abajo del todo. */}
         <div className="mt-auto">
-          <AccountCard email={email} onSettings={() => setSettings(true)} className="bg-bg" />
+          <AccountCard name={name} email={email} onSettings={() => setSettings(true)} className="bg-bg" />
         </div>
       </aside>
 
@@ -921,7 +992,7 @@ function Tasks({ space }: { space: Space }) {
             <>
               <PageHeader title="Más" />
               {/* Cuenta, con la rueda de Ajustes (tema y cerrar sesión). */}
-              <AccountCard email={email} onSettings={() => setSettings(true)} className="bg-sunk" />
+              <AccountCard name={name} email={email} onSettings={() => setSettings(true)} className="bg-sunk" />
               <nav aria-label="Archivo" className="flex flex-col">
                 <button
                   onClick={() => select({ kind: "done" })}
@@ -1232,6 +1303,7 @@ function Tasks({ space }: { space: Space }) {
 
       {settings && (
         <Dialog title="Ajustes" onClose={() => setSettings(false)}>
+          <NameSettings name={name} onSaved={shop.reload} />
           <section className="flex flex-col gap-2">
             <h3 className="text-[13px] font-bold uppercase tracking-wide text-muted">Tema</h3>
             <ThemeChoice />

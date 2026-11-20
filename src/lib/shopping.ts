@@ -151,16 +151,6 @@ export async function leaveHousehold(id: string) {
   if (error) throw error;
 }
 
-// El nombre con el que te ve el resto de la lista.
-export async function renameMember(householdId: string, userId: string, name: string) {
-  const { error } = await supabase!
-    .from("household_members")
-    .update({ display_name: name })
-    .eq("household_id", householdId)
-    .eq("user_id", userId);
-  if (error) throw error;
-}
-
 // Miembros de todas las listas, para saber quién añadió cada cosa.
 export async function fetchMembers(householdIds: string[]): Promise<Member[]> {
   if (!householdIds.length) return [];

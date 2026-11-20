@@ -25,8 +25,9 @@ export default function Dialog({
     const d = ref.current!;
     if (d.open) return;
     d.showModal();
-    // showModal() enfoca el botón de cerrar; mejor el primer campo del formulario.
-    d.querySelector<HTMLElement>("input:not(.sr-only), textarea, select")?.focus();
+    // showModal() enfoca el botón de cerrar; mejor el primer campo del formulario
+    // (salvo los marcados con data-no-autofocus, como el nombre en Ajustes).
+    d.querySelector<HTMLElement>("input:not(.sr-only):not([data-no-autofocus]), textarea, select")?.focus();
   }, []);
 
   return (

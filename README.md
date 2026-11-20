@@ -20,7 +20,7 @@ Primera versión (MVP):
 - Identidad propia: logo, tipografía Outfit, magenta en Personal y azul marino en Laboral, modo claro y oscuro
 - Cuenta de usuario y sincronización entre dispositivos con Supabase (obligatorio: sin configurar, la app no arranca)
 - **Listas de la compra**, integradas en la app (destacadas antes de Proyectos y en la barra inferior del móvil, con el número de cosas por comprar). Todo el mundo empieza con «Mi lista»; al compartirla con un enlace (caduca en 7 días) pasa a llamarse «Compartida» («Compartida 2»…) y cualquiera puede renombrarla. Se puede tener varias, crear otra «Mi lista» y salir de una. Los cambios se ven al momento en todos los móviles; cantidad y nota opcionales, aviso si algo ya está en la lista, y «Terminar compra» quita lo que ya está en el carro
-- **Calendarios de Google** (solo lectura): en Ajustes se conectan una o varias cuentas de Google y, de cada calendario, se elige si sus eventos se ven en Personal, en Laboral o en las dos. Los eventos salen en **Hoy** (encima de las tareas) y en **Próximo** (que ahora va día a día, con eventos y tareas juntos, durante los próximos 30 días). Pulsar un evento lo abre en Google Calendar
+- **Calendarios de Google** (solo lectura): en Ajustes se conectan una o varias cuentas de Google y, de cada calendario, se elige si sus eventos se ven en Personal, en Laboral o en las dos. Los eventos salen en **Hoy** (encima de las tareas) y en **Próximo** (que ahora va día a día, con eventos y tareas juntos; los eventos, de los próximos 7 días). Pulsar un evento lo abre en Google Calendar
 
 ## Próximos pasos
 

@@ -13,7 +13,7 @@ import {
 import type { Space } from "@/lib/tasks";
 
 // Días hacia delante que se leen de Google para Hoy y Próximo.
-export const EVENT_DAYS = 30;
+export const EVENT_DAYS = 7;
 // Se vuelve a leer al volver a la app si han pasado estos minutos.
 const STALE_MS = 5 * 60_000;
 
@@ -73,10 +73,11 @@ export function eventsByDay(events: CalendarEvent[], space: Space): Map<string, 
 }
 
 // Lista de eventos de un día: hora, color del calendario y título; abre el evento en Google.
+// Va en un bloque con fondo propio para distinguirla de las tareas.
 export function EventList({ events, day }: { events: CalendarEvent[]; day: string }) {
   if (!events.length) return null;
   return (
-    <ul className="flex flex-col" aria-label="Eventos del calendario">
+    <ul className="flex flex-col rounded-xl bg-sunk p-1" aria-label="Eventos del calendario">
       {events.map((e) => (
         <li key={e.id}>
           <a

@@ -68,6 +68,7 @@ import ConfirmDialog from "./ConfirmDialog";
 import { DetectedDateChip, useDetectedDate } from "./DetectedDate";
 import { EmptyFilter } from "./EmptyFilter";
 import { EmptyInbox } from "./EmptyInbox";
+import { EmptyProject } from "./EmptyProject";
 import Dialog, { fieldClass } from "./Dialog";
 import LabelDialog from "./LabelDialog";
 import { LabelList, LabelTag, TypedLabels } from "./Labels";
@@ -342,6 +343,7 @@ function Tasks({ space }: { space: Space }) {
   const [selection, setSelection] = useState<Selection>(INBOX);
   const [title, setTitle] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
+  const quickInput = useRef<HTMLInputElement>(null);
   const [taskDialog, setTaskDialog] = useState<TaskDraft | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   // Nuevo proyecto (con su padre, si se crea dentro de otro) o edición de uno existente.
@@ -912,10 +914,46 @@ function Tasks({ space }: { space: Space }) {
     labelsOf,
     spaceLabels,
   };
+  // Acceso directo del estado vacío: abre el modo rápido (en móvil está plegado) y pone el cursor.
+  function startAdding() {
+    setComposerOpen(true);
+    requestAnimationFrame(() => quickInput.current?.focus());
+  }
   const flatContext = (t: Task): RowContext => ({
     parent: tasks.find((p) => p.id === t.parentId)?.title,
     project: projectById(t.projectId),
   });
+
+  // Lo completado de esta lista se despliega aquí mismo, como las subtareas completadas.
+  // Con la lista vacía va arriba del todo, para que no quede suelto bajo el estado vacío.
+  const doneSection = doneHere > 0 && (
+    <div className="flex flex-col gap-1">
+      <button
+        onClick={() => setShowDoneHere((v) => !v)}
+        aria-expanded={showDoneHere}
+        className="inline-flex min-h-11 items-center gap-1.5 self-start rounded-lg px-2 text-sm font-semibold text-muted hover:bg-track hover:text-ink"
+      >
+        <EyeIcon size={15} off={!showDoneHere} />
+        {`${showDoneHere ? "Ocultar" : "Mostrar"} ${doneHere === 1 ? "1 completada" : `${doneHere} completadas`}`}
+      </button>
+      {showDoneHere && (
+        <ul className="flex flex-col">
+          {doneRoots.map((t) => (
+            <TaskRow
+              key={t.id}
+              task={t}
+              depth={0}
+              tree={tree}
+              context={tree ? undefined : flatContext(t)}
+              onToggleShowDone={toggleShowDoneSubtasks}
+              onToggleCollapsed={toggleCollapsed}
+              {...rowProps}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 
   return (
     <div data-space={space} className="flex min-h-dvh">
@@ -1077,6 +1115,7 @@ function Tasks({ space }: { space: Space }) {
                   <input
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
+                    ref={quickInput}
                     placeholder="Añadir tarea…"
                     aria-label="Nombre de la tarea"
                     autoFocus={composerOpen}
@@ -1104,6 +1143,8 @@ function Tasks({ space }: { space: Space }) {
               </form>
             )}
 
+            {roots.length === 0 && doneSection}
+
             {loaded && !doneView && roots.length === 0 && !viewHasEvents && (
               sel.kind === "view" && sel.view !== "inbox" ? (
                 <EmptyFilter view={sel.view} />
@@ -1112,7 +1153,7 @@ function Tasks({ space }: { space: Space }) {
               ) : label ? (
                 <p className="py-16 text-center text-muted">Ninguna tarea pendiente lleva esta etiqueta.</p>
               ) : (
-                <p className="py-16 text-center text-muted">No queda nada pendiente en este proyecto.</p>
+                <EmptyProject onAdd={canAdd ? startAdding : undefined} />
               )
             )}
 
@@ -1201,35 +1242,7 @@ function Tasks({ space }: { space: Space }) {
               </>
             )}
 
-            {/* Lo completado de esta lista se despliega aquí mismo, como las subtareas completadas. */}
-            {doneHere > 0 && (
-              <div className="flex flex-col gap-1">
-                <button
-                  onClick={() => setShowDoneHere((v) => !v)}
-                  aria-expanded={showDoneHere}
-                  className="inline-flex min-h-11 items-center gap-1.5 self-start rounded-lg px-2 text-sm font-semibold text-muted hover:bg-track hover:text-ink"
-                >
-                  <EyeIcon size={15} off={!showDoneHere} />
-                  {`${showDoneHere ? "Ocultar" : "Mostrar"} ${doneHere === 1 ? "1 completada" : `${doneHere} completadas`}`}
-                </button>
-                {showDoneHere && (
-                  <ul className="flex flex-col">
-                    {doneRoots.map((t) => (
-                      <TaskRow
-                        key={t.id}
-                        task={t}
-                        depth={0}
-                        tree={tree}
-                        context={tree ? undefined : flatContext(t)}
-                        onToggleShowDone={toggleShowDoneSubtasks}
-                    onToggleCollapsed={toggleCollapsed}
-                        {...rowProps}
-                      />
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
+            {roots.length > 0 && doneSection}
             </>
           )}
         </div>

@@ -92,19 +92,28 @@ export default function Landing() {
         </section>
 
         <section className="bg-sunk">
-          <div className="mx-auto flex max-w-[1080px] flex-col gap-8 px-4 py-14 md:px-6 md:py-20">
-            <h2 className="text-[28px] leading-tight font-extrabold tracking-[-0.02em] md:text-[34px]">
-              Todo lo que necesitas, nada que estorbe
-            </h2>
-            <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mx-auto flex max-w-[1080px] flex-col gap-8 px-4 py-14 md:gap-12 md:px-6 md:py-20">
+            <div className="flex flex-col gap-3 md:items-center md:text-center">
+              <h2 className="text-[28px] leading-tight font-extrabold tracking-[-0.02em] md:text-[38px]">
+                Todo lo que necesitas, nada que estorbe
+              </h2>
+              <p className="max-w-[52ch] text-lg text-ink-soft">
+                Lo justo para organizarte el día y la semana, sin menús infinitos.
+              </p>
+            </div>
+            {/* Móvil: icono y título en la misma línea, texto debajo.
+                Desde tablet: dos columnas, con el icono a la izquierda y título y texto a su lado. */}
+            <ul className="grid gap-4 md:grid-cols-2 md:gap-5">
               {FEATURES.map((f) => (
-                <li key={f.title} className="flex flex-col gap-3 rounded-xl bg-bg p-5">
-                  {/* Icono y título en la misma línea; en las cuatro columnas estrechas, uno encima del otro. */}
-                  <div className="flex items-center gap-3 lg:flex-col lg:items-start lg:gap-2">
-                    <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent-ink">{f.icon}</span>
-                    <h3 className="text-[17px] leading-snug font-bold">{f.title}</h3>
-                  </div>
-                  <p className="text-[15px] leading-relaxed text-ink-soft">{f.text}</p>
+                <li
+                  key={f.title}
+                  className="grid grid-cols-[2.5rem_1fr] items-center gap-x-3 gap-y-3 rounded-xl bg-bg p-5 md:grid-cols-[3rem_1fr] md:content-start md:items-start md:gap-x-5 md:gap-y-1.5 md:p-6"
+                >
+                  <span className="grid size-10 place-items-center rounded-lg bg-accent-soft text-accent-ink md:row-span-2 md:size-12 md:rounded-xl">
+                    {f.icon}
+                  </span>
+                  <h3 className="text-[17px] leading-snug font-bold md:pt-0.5 md:text-lg">{f.title}</h3>
+                  <p className="col-span-2 text-[15px] leading-relaxed text-ink-soft md:col-span-1 md:col-start-2">{f.text}</p>
                 </li>
               ))}
             </ul>

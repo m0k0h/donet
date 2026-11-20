@@ -122,7 +122,11 @@ export function GoogleCalendarsSettings({ onChange }: { onChange: () => void }) 
         </p>
       ) : (
         <>
-          <p className="text-sm text-muted">Elige en qué sección quieres ver los eventos de cada calendario, en Hoy y Próximo.</p>
+          <p className="text-sm text-muted">
+            {accounts.length
+              ? "Marca en qué sección quieres ver cada calendario."
+              : "Conecta tu cuenta para ver tus eventos en Hoy y Próximo."}
+          </p>
           {error && (
             <p role="alert" className="text-sm font-semibold text-danger">
               {error}

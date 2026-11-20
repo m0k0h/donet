@@ -39,7 +39,10 @@ export function EmptyInbox() {
 
       <div className="flex flex-col gap-1">
         <p className="text-lg font-extrabold tracking-[-0.01em]">Entrada despejada</p>
-        <p className="text-sm text-muted">Todo está en su sitio. Lo que apuntes sin proyecto llegará aquí.</p>
+        <p className="text-sm text-muted">
+          <span className="block">Todo está en su sitio.</span>
+          <span className="block">Lo que apuntes sin proyecto llegará aquí.</span>
+        </p>
       </div>
     </div>
   );

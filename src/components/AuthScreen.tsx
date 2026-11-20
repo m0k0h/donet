@@ -116,7 +116,7 @@ export default function AuthScreen() {
 }
 
 const PERKS = [
-  "Hoy y Próximo, con tus eventos de Google Calendar",
+  "Hoy y Próximo con Google Calendar",
   "Proyectos y subtareas a cualquier nivel",
   "Sincronizado en el móvil y el ordenador",
 ];

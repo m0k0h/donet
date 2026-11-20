@@ -11,7 +11,17 @@ const ERRORS: Record<string, string> = {
   email_not_confirmed: "Confirma tu correo antes de entrar: revisa tu bandeja de entrada.",
   user_already_exists: "Ya existe una cuenta con ese correo.",
   weak_password: "La contraseña es demasiado débil (mínimo 6 caracteres).",
-  over_email_send_rate_limit: "Demasiados intentos. Espera un momento y vuelve a probar.",
+  over_email_send_rate_limit: "Se han enviado demasiados correos de confirmación. Espera un rato y vuelve a probar.",
+  over_request_rate_limit: "Demasiados intentos. Espera un momento y vuelve a probar.",
+  email_address_invalid: "Ese correo no es válido. Revisa que esté bien escrito.",
+  signup_disabled: "Ahora mismo no se pueden crear cuentas nuevas.",
+  email_provider_disabled: "Ahora mismo no se pueden crear cuentas con correo.",
+};
+
+// Si el error no es uno de los conocidos, se dice al menos qué es lo que ha fallado.
+const FALLBACK = {
+  in: "No se ha podido iniciar sesión. Inténtalo de nuevo.",
+  up: "No se ha podido completar el registro. Inténtalo de nuevo.",
 };
 
 export default function AuthScreen() {
@@ -35,7 +45,11 @@ export default function AuthScreen() {
     const { data, error } =
       mode === "in" ? await supabase!.auth.signInWithPassword(creds) : await supabase!.auth.signUp(creds);
     setBusy(false);
-    if (error) setError(ERRORS[error.code ?? ""] ?? "No se ha podido completar. Inténtalo de nuevo.");
+    if (error) {
+      // El código en la consola ayuda a saber qué pasó cuando sale el mensaje genérico.
+      console.warn("Supabase auth:", error.code, error.message);
+      setError(ERRORS[error.code ?? ""] ?? FALLBACK[mode]);
+    }
     else if (mode === "up" && !data.session) setNotice("Te hemos enviado un correo para confirmar la cuenta.");
   }
 

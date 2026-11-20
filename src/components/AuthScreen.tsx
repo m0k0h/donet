@@ -50,7 +50,14 @@ export default function AuthScreen() {
       console.warn("Supabase auth:", error.code, error.message);
       setError(ERRORS[error.code ?? ""] ?? FALLBACK[mode]);
     }
-    else if (mode === "up" && !data.session) setNotice("Te hemos enviado un correo para confirmar la cuenta.");
+    else if (mode === "up" && !data.session && data.user?.identities?.length === 0) {
+      // Con la confirmación por correo activada, Supabase no da error si el correo ya
+      // tiene cuenta (para no revelar qué correos existen) ni envía nada: devuelve un
+      // usuario sin identidades. Se avisa y se pasa a «Inicia sesión» con el correo puesto.
+      setMode("in");
+      setPassword("");
+      setError("Ya existe una cuenta con ese correo. Inicia sesión con tu contraseña.");
+    } else if (mode === "up" && !data.session) setNotice("Te hemos enviado un correo para confirmar la cuenta.");
   }
 
   const field = "min-h-11 w-full rounded-lg bg-sunk px-3.5 text-base outline-none placeholder:text-muted focus:ring-2 focus:ring-accent";

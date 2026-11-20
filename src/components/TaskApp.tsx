@@ -170,6 +170,21 @@ function ShoppingNavItem({ active, pending, onClick }: { active: boolean; pendin
   );
 }
 
+const HIDE_EVENTS_KEY = "donet.hideEvents";
+function loadHideEvents() {
+  try {
+    return typeof window !== "undefined" && localStorage.getItem(HIDE_EVENTS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function saveHideEvents(hide: boolean) {
+  try {
+    if (hide) localStorage.setItem(HIDE_EVENTS_KEY, "1");
+    else localStorage.removeItem(HIDE_EVENTS_KEY);
+  } catch {}
+}
+
 // Cuenta con la que se ha entrado y la rueda que abre Ajustes (tema, cerrar sesión y lo que venga).
 function AccountCard({ email, onSettings, className = "" }: { email: string; onSettings: () => void; className?: string }) {
   return (
@@ -283,6 +298,8 @@ function Tasks({ space }: { space: Space }) {
   const shop = useShopping(userId);
   // Eventos de los calendarios de Google elegidos en Ajustes.
   const calendar = useCalendarEvents(userId);
+  // Eventos ocultos en Hoy y Próximo (se recuerda en este navegador).
+  const [hideEvents, setHideEvents] = useState(loadHideEvents);
 
   // Se llega a la Compra desde /compra o con una invitación pendiente.
   useEffect(() => {
@@ -429,7 +446,8 @@ function Tasks({ space }: { space: Space }) {
 
   // Eventos de calendario de esta sección, por día. Hoy los muestra encima de las tareas;
   // Próximo y Próximos (móvil) los mezclan con las tareas en grupos por día.
-  const eventDays = eventsByDay(calendar.events, space);
+  const allEventDays = eventsByDay(calendar.events, space);
+  const eventDays = hideEvents ? new Map<string, never[]>() : allEventDays;
   const lastEventDay = (() => {
     const d = new Date(today + "T00:00");
     d.setDate(d.getDate() + EVENT_DAYS);
@@ -450,6 +468,16 @@ function Tasks({ space }: { space: Space }) {
       })()
     : [];
   const viewHasEvents = todayEvents.length > 0 || dayGroups.some((g) => g.events.length > 0);
+  // El botón de ocultar sale en Hoy y Próximo si hay eventos que enseñar en esta sección.
+  const eventsToggle =
+    sel.kind === "view" &&
+    sel.view !== "inbox" &&
+    [...allEventDays.keys()].some((d) => (sel.view === "today" ? d === today : d >= today && d <= lastEventDay));
+  function toggleHideEvents() {
+    const next = !hideEvents;
+    setHideEvents(next);
+    saveHideEvents(next);
+  }
 
   const pendingIn = (s: Selection) => tasksIn(tasks, space, s, taskLabels).filter((t) => !t.done).length;
   const count = list.filter((t) => !t.done).length;
@@ -924,6 +952,19 @@ function Tasks({ space }: { space: Space }) {
                       label: count === 0 ? "Todo hecho" : count === 1 ? "1 pendiente" : `${count} pendientes`,
                       empty: count === 0,
                     }
+              }
+              aside={
+                eventsToggle && (
+                  <button
+                    onClick={toggleHideEvents}
+                    aria-pressed={!hideEvents}
+                    title={hideEvents ? "Mostrar los eventos del calendario" : "Ocultar los eventos del calendario"}
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-muted hover:bg-track hover:text-ink"
+                  >
+                    <EyeIcon size={15} off={hideEvents} />
+                    {hideEvents ? "Mostrar eventos" : "Ocultar eventos"}
+                  </button>
+                )
               }
             />
 

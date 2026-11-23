@@ -1789,6 +1789,37 @@ function TaskRow({
   );
 }
 
+// URLs dentro de un texto. Los signos de puntuación del final («mira https://x.com.») no son parte del enlace.
+const URL_RE = /\bhttps?:\/\/[^\s<>"]*[^\s<>".,;:!?)\]}'»]/g;
+const URL_MAX = 100;
+
+// Texto con las URLs convertidas en enlaces; las muy largas se muestran cortadas con «…» pero enlazan a la URL entera.
+function linkify(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  for (const m of text.matchAll(URL_RE)) {
+    const url = m[0];
+    const start = m.index ?? 0;
+    if (start > last) parts.push(text.slice(last, start));
+    parts.push(
+      <a
+        key={start}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={url.length > URL_MAX ? url : undefined}
+        onClick={(e) => e.stopPropagation()}
+        className="break-all text-accent-ink underline underline-offset-2 hover:no-underline"
+      >
+        {url.length > URL_MAX ? `${url.slice(0, URL_MAX)}…` : url}
+      </a>,
+    );
+    last = start + url.length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
 // Descripción de una tarea en la lista: dos líneas y, si es más larga, «Ver más» para leerla entera.
 function Description({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
@@ -1809,7 +1840,7 @@ function Description({ text }: { text: string }) {
   return (
     <div className="flex flex-col items-start">
       <p ref={ref} className={`whitespace-pre-line break-words text-sm text-ink-soft ${open ? "" : "line-clamp-2"}`}>
-        {text}
+        {linkify(text)}
       </p>
       {(long || open) && (
         <button

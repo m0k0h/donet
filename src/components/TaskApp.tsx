@@ -75,6 +75,7 @@ import Logo from "./Logo";
 import PageHeader from "./PageHeader";
 import ProjectDialog from "./ProjectDialog";
 import ProjectTree from "./ProjectTree";
+import { Sentences } from "./Sentences";
 import SetupScreen from "./SetupScreen";
 import ShoppingPanel, { ShoppingNotice, useShopping } from "./ShoppingPanel";
 import TaskDialog, { type TaskDraft } from "./TaskDialog";
@@ -1107,8 +1108,10 @@ function Tasks({ space }: { space: Space }) {
             {loaded && !doneView && roots.length === 0 && !viewHasEvents && (
               sel.kind === "view" && sel.view !== "inbox" ? (
                 <EmptyFilter view={sel.view} />
-              ) : sel.kind === "view" ? (
+              ) : sel.kind === "view" && doneHere === 0 ? (
                 <EmptyInbox />
+              ) : sel.kind === "view" ? (
+                <p className="py-16 text-center text-muted">No queda nada pendiente en Entrada.</p>
               ) : label ? (
                 <p className="py-16 text-center text-muted">Ninguna tarea pendiente lleva esta etiqueta.</p>
               ) : (
@@ -1117,9 +1120,10 @@ function Tasks({ space }: { space: Space }) {
             )}
 
             {loaded && doneView && list.length === 0 && (
-              <p className="py-16 text-center text-muted">
-                Aún no has completado nada en {spaceLabel}. Lo que completes aparecerá aquí.
-              </p>
+              <Sentences
+                className="py-16 text-center text-muted"
+                text={`Aún no has completado nada en ${spaceLabel}. Lo que completes aparecerá aquí.`}
+              />
             )}
 
             {doneView ? (

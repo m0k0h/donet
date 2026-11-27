@@ -4,6 +4,7 @@ import Link from "next/link";
 import { type CSSProperties, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Logo from "./Logo";
+import { Sentences } from "./Sentences";
 import { BackIcon, CheckIcon } from "./icons";
 
 const ERRORS: Record<string, string> = {
@@ -85,9 +86,10 @@ export default function AuthScreen() {
             <h1 className="text-2xl font-extrabold tracking-[-0.02em]">
               {mode === "in" ? "Inicia sesión" : "Crea tu cuenta"}
             </h1>
-            <p className="text-[15px] text-ink-soft">
-              {mode === "in" ? "Hola de nuevo. Entra para seguir con tus tareas." : "Empieza gratis: solo necesitas un correo."}
-            </p>
+            <Sentences
+              className="text-[15px] text-ink-soft"
+              text={mode === "in" ? "Hola de nuevo. Entra para seguir con tus tareas." : "Empieza gratis: solo necesitas un correo."}
+            />
           </div>
           <input
             type="email"

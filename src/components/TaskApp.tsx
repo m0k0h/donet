@@ -76,6 +76,7 @@ import Logo from "./Logo";
 import PageHeader from "./PageHeader";
 import ProjectDialog from "./ProjectDialog";
 import ProjectTree from "./ProjectTree";
+import { Sentences } from "./Sentences";
 import SetupScreen from "./SetupScreen";
 import ShoppingPanel, { ShoppingNotice, useShopping } from "./ShoppingPanel";
 import TaskDialog, { type TaskDraft } from "./TaskDialog";
@@ -1148,8 +1149,10 @@ function Tasks({ space }: { space: Space }) {
             {loaded && !doneView && roots.length === 0 && !viewHasEvents && (
               sel.kind === "view" && sel.view !== "inbox" ? (
                 <EmptyFilter view={sel.view} />
-              ) : sel.kind === "view" ? (
+              ) : sel.kind === "view" && doneHere === 0 ? (
                 <EmptyInbox />
+              ) : sel.kind === "view" ? (
+                <p className="py-16 text-center text-muted">No queda nada pendiente en Entrada.</p>
               ) : label ? (
                 <p className="py-16 text-center text-muted">Ninguna tarea pendiente lleva esta etiqueta.</p>
               ) : (
@@ -1158,9 +1161,10 @@ function Tasks({ space }: { space: Space }) {
             )}
 
             {loaded && doneView && list.length === 0 && (
-              <p className="py-16 text-center text-muted">
-                Aún no has completado nada en {spaceLabel}. Lo que completes aparecerá aquí.
-              </p>
+              <Sentences
+                className="py-16 text-center text-muted"
+                text={`Aún no has completado nada en ${spaceLabel}. Lo que completes aparecerá aquí.`}
+              />
             )}
 
             {doneView ? (
@@ -1802,6 +1806,37 @@ function TaskRow({
   );
 }
 
+// URLs dentro de un texto. Los signos de puntuación del final («mira https://x.com.») no son parte del enlace.
+const URL_RE = /\bhttps?:\/\/[^\s<>"]*[^\s<>".,;:!?)\]}'»]/g;
+const URL_MAX = 100;
+
+// Texto con las URLs convertidas en enlaces; las muy largas se muestran cortadas con «…» pero enlazan a la URL entera.
+function linkify(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  for (const m of text.matchAll(URL_RE)) {
+    const url = m[0];
+    const start = m.index ?? 0;
+    if (start > last) parts.push(text.slice(last, start));
+    parts.push(
+      <a
+        key={start}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={url.length > URL_MAX ? url : undefined}
+        onClick={(e) => e.stopPropagation()}
+        className="break-all text-accent-ink underline underline-offset-2 hover:no-underline"
+      >
+        {url.length > URL_MAX ? `${url.slice(0, URL_MAX)}…` : url}
+      </a>,
+    );
+    last = start + url.length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
 // Descripción de una tarea en la lista: dos líneas y, si es más larga, «Ver más» para leerla entera.
 function Description({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
@@ -1822,7 +1857,7 @@ function Description({ text }: { text: string }) {
   return (
     <div className="flex flex-col items-start">
       <p ref={ref} className={`whitespace-pre-line break-words text-sm text-ink-soft ${open ? "" : "line-clamp-2"}`}>
-        {text}
+        {linkify(text)}
       </p>
       {(long || open) && (
         <button

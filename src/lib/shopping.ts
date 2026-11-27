@@ -51,10 +51,19 @@ type ItemRow = {
   created_at: string;
 };
 
+// El nombre de un artículo empieza en mayúscula («leche» → «Leche»), salvo que la
+// primera palabra ya lleve mayúsculas por dentro, como una marca («iPhone», «eBay»).
+export function itemName(raw: string) {
+  const name = raw.trim();
+  const first = name.split(/\s/)[0];
+  if (/\p{Lu}/u.test(first.slice(1))) return name;
+  return name.charAt(0).toLocaleUpperCase("es") + name.slice(1);
+}
+
 export const itemFromRow = (r: ItemRow): ShoppingItem => ({
   id: r.id,
   householdId: r.household_id,
-  name: r.name,
+  name: itemName(r.name),
   quantity: r.quantity ?? undefined,
   note: r.note ?? undefined,
   section: isSectionId(r.section) ? r.section : undefined,

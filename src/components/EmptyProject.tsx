@@ -1,4 +1,5 @@
 import { PlusIcon } from "./icons";
+import { Sentences } from "./Sentences";
 
 // Estado vacío de un proyecto sin pendientes, con el mismo estilo que los de Entrada, Hoy y la Compra:
 // una lista con todo marcado y cara contenta. Invita a apuntar lo siguiente con un acceso directo.
@@ -46,10 +47,7 @@ export function EmptyProject({ onAdd }: { onAdd?: () => void }) {
 
       <div className="flex flex-col gap-1">
         <p className="text-lg font-extrabold tracking-[-0.01em]">Proyecto al día</p>
-        <p className="text-sm text-muted">
-          <span className="block">No queda nada pendiente.</span>
-          <span className="block">¿Qué es lo siguiente?</span>
-        </p>
+        <Sentences className="text-sm text-muted" text="No queda nada pendiente. ¿Qué es lo siguiente?" />
       </div>
 
       {onAdd && (

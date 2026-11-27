@@ -2,6 +2,8 @@
 // una bandeja de entrada con cara, flotando y contenta de estar despejada.
 // Usa los colores del espacio (--accent, --mark…), así sirve en claro, oscuro, Personal y Trabajo.
 
+import { Sentences } from "./Sentences";
+
 export function EmptyInbox() {
   return (
     <div className="flex flex-col items-center gap-4 py-14 text-center">
@@ -39,10 +41,7 @@ export function EmptyInbox() {
 
       <div className="flex flex-col gap-1">
         <p className="text-lg font-extrabold tracking-[-0.01em]">Entrada despejada</p>
-        <p className="text-sm text-muted">
-          <span className="block">Todo está en su sitio.</span>
-          <span className="block">Lo que apuntes sin proyecto llegará aquí.</span>
-        </p>
+        <Sentences className="text-sm text-muted" text="Todo está en su sitio. Lo que apuntes sin proyecto llegará aquí." />
       </div>
     </div>
   );

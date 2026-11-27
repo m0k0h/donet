@@ -11,6 +11,11 @@ const outfit = Outfit({
 export const metadata: Metadata = {
   title: "doneT",
   description: "Mi gestor de tareas personal",
+  appleWebApp: {
+    capable: true,
+    title: "doneT",
+    statusBarStyle: "default",
+  },
 };
 
 export const viewport: Viewport = {

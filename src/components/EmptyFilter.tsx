@@ -1,4 +1,5 @@
 import type { View } from "@/lib/tasks";
+import { Sentences } from "./Sentences";
 
 // Estado vacío de los filtros (Hoy y Próximo): un calendario con cara.
 // Hoy: contento, con destellos. Próximo: echándose una siesta.
@@ -70,7 +71,7 @@ export function EmptyFilter({ view }: { view: Exclude<View, "inbox"> }) {
 
       <div className="flex flex-col gap-1">
         <p className="text-lg font-extrabold tracking-[-0.01em]">{title}</p>
-        <p className="text-sm text-muted">{text}</p>
+        <Sentences className="text-sm text-muted" text={text} />
       </div>
     </div>
   );

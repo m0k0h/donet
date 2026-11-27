@@ -17,6 +17,7 @@ import {
   fetchSectionMemory,
   finishShopping,
   insertItem,
+  itemName,
   invitedHouseholdIfMember,
   isListLimit,
   inviteInfo,
@@ -244,8 +245,9 @@ export function useShopping(userId: string | null | undefined) {
     },
 
     // Devuelve sin añadir (y avisa) si ya está pendiente en esta lista.
-    add(name: string) {
+    add(typed: string) {
       if (!current || !userId) return;
+      const name = itemName(typed);
       const dup = currentItems.find((i) => !i.checked && i.name.toLocaleLowerCase("es") === name.toLocaleLowerCase("es"));
       if (dup) {
         const who = dup.addedBy && dup.addedBy !== userId ? memberName(dup.addedBy) : undefined;
@@ -274,7 +276,8 @@ export function useShopping(userId: string | null | undefined) {
     },
 
     // learn: la sección se ha elegido a mano, así que se recuerda para la próxima vez.
-    save(item: ShoppingItem, c: ItemChanges, learn = false) {
+    save(item: ShoppingItem, changes: ItemChanges, learn = false) {
+      const c = { ...changes, name: itemName(changes.name) };
       setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, ...c } : x)));
       sync(updateItem(item.id, c));
       const key = itemKey(c.name);

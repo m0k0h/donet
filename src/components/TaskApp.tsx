@@ -926,34 +926,33 @@ function Tasks({ space }: { space: Space }) {
   });
 
   // Lo completado de esta lista se despliega aquí mismo, como las subtareas completadas.
-  // Con la lista vacía va arriba del todo, para que no quede suelto bajo el estado vacío.
-  const doneSection = doneHere > 0 && (
-    <div className="flex flex-col gap-1">
-      <button
-        onClick={() => setShowDoneHere((v) => !v)}
-        aria-expanded={showDoneHere}
-        className="inline-flex min-h-11 items-center gap-1.5 self-start rounded-lg px-2 text-sm font-semibold text-muted hover:bg-track hover:text-ink"
-      >
-        <EyeIcon size={15} off={!showDoneHere} />
-        {`${showDoneHere ? "Ocultar" : "Mostrar"} ${doneHere === 1 ? "1 completada" : `${doneHere} completadas`}`}
-      </button>
-      {showDoneHere && (
-        <ul className="flex flex-col">
-          {doneRoots.map((t) => (
-            <TaskRow
-              key={t.id}
-              task={t}
-              depth={0}
-              tree={tree}
-              context={tree ? undefined : flatContext(t)}
-              onToggleShowDone={toggleShowDoneSubtasks}
-              onToggleCollapsed={toggleCollapsed}
-              {...rowProps}
-            />
-          ))}
-        </ul>
-      )}
-    </div>
+  // Con la lista vacía, el botón va en la cabecera, al lado de «Todo hecho».
+  const listEmpty = !doneView && roots.length === 0;
+  const doneToggle = doneHere > 0 && (
+    <button
+      onClick={() => setShowDoneHere((v) => !v)}
+      aria-expanded={showDoneHere}
+      className="inline-flex min-h-11 items-center gap-1.5 self-start rounded-lg px-2 text-sm font-semibold text-muted hover:bg-track hover:text-ink"
+    >
+      <EyeIcon size={15} off={!showDoneHere} />
+      {`${showDoneHere ? "Ocultar" : "Mostrar"} ${doneHere === 1 ? "1 completada" : `${doneHere} completadas`}`}
+    </button>
+  );
+  const doneList = doneHere > 0 && showDoneHere && (
+    <ul className="flex flex-col">
+      {doneRoots.map((t) => (
+        <TaskRow
+          key={t.id}
+          task={t}
+          depth={0}
+          tree={tree}
+          context={tree ? undefined : flatContext(t)}
+          onToggleShowDone={toggleShowDoneSubtasks}
+          onToggleCollapsed={toggleCollapsed}
+          {...rowProps}
+        />
+      ))}
+    </ul>
   );
 
   return (
@@ -1091,6 +1090,7 @@ function Tasks({ space }: { space: Space }) {
                       empty: count === 0,
                     }
               }
+              countAside={listEmpty ? doneToggle : undefined}
               aside={
                 eventsToggle && (
                   <button
@@ -1144,15 +1144,13 @@ function Tasks({ space }: { space: Space }) {
               </form>
             )}
 
-            {roots.length === 0 && doneSection}
+            {listEmpty && doneList}
 
-            {loaded && !doneView && roots.length === 0 && !viewHasEvents && (
+            {loaded && listEmpty && !showDoneHere && !viewHasEvents && (
               sel.kind === "view" && sel.view !== "inbox" ? (
                 <EmptyFilter view={sel.view} />
-              ) : sel.kind === "view" && doneHere === 0 ? (
-                <EmptyInbox />
               ) : sel.kind === "view" ? (
-                <p className="py-16 text-center text-muted">No queda nada pendiente en Entrada.</p>
+                <EmptyInbox />
               ) : label ? (
                 <p className="py-16 text-center text-muted">Ninguna tarea pendiente lleva esta etiqueta.</p>
               ) : (
@@ -1246,7 +1244,12 @@ function Tasks({ space }: { space: Space }) {
               </>
             )}
 
-            {roots.length > 0 && doneSection}
+            {!listEmpty && doneHere > 0 && (
+              <div className="flex flex-col gap-1">
+                {doneToggle}
+                {doneList}
+              </div>
+            )}
             </>
           )}
         </div>

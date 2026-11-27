@@ -9,6 +9,7 @@ export default function PageHeader({
   actions,
   context,
   count,
+  countAside,
   aside,
 }: {
   title: ReactNode;
@@ -20,6 +21,8 @@ export default function PageHeader({
   context?: ReactNode;
   // Etiqueta con lo pendiente: «3 pendientes», «Nada por comprar»…
   count?: { label: string; empty?: boolean };
+  // Control pequeño justo al lado de la etiqueta (p. ej. mostrar completadas con «Todo hecho»).
+  countAside?: ReactNode;
   // Control pequeño al final de la línea de abajo (p. ej. ocultar completadas).
   aside?: ReactNode;
 }) {
@@ -44,6 +47,7 @@ export default function PageHeader({
               {count.label}
             </span>
           )}
+          {countAside && <div className="-mx-1 -my-2.5">{countAside}</div>}
           {/* Margen negativo: el botón mantiene 44 px para el dedo sin separar las líneas. */}
           {aside && <div className="-my-2.5 ml-auto">{aside}</div>}
         </div>
